@@ -179,6 +179,12 @@ def press(p, key, frames=4, settle=16):
     before = _snapshot(p)
     p.press(key, frames)
     p.step(settle)
+    sb1 = p.read32(SB1_PTR)
+    for _ in range(40):  # still moving (an ice slide, a long walk): wait until the position holds
+        pos = p.range(sb1, 4)
+        p.step(6)
+        if p.range(sb1, 4) == pos:
+            break
     after = _snapshot(p)
     return {"key": key, "before": before, "after": after,
             "moved": (before["map"], before["pos"]) != (after["map"], after["pos"]),

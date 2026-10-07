@@ -238,7 +238,8 @@ TOOLS = {
     "get_state": (t_get_state, "Current game state: mode (overworld/battle/dialog/other), map, position, "
                   "facing, badges, money, party, battle details, current dialog box, and map_view: the 15x10 "
                   "viewport grid (@ you, N NPC/object, T trainer, . walkable, # blocked, G tall grass, "
-                  "~ water, W waterfall, I ice, F forced movement, D warp/door, S sign, : walkable but another "
+                  "~ water, W waterfall, I ice (slides you), F forced movement, D warp/door, S sign or other "
+                  "interactable (doors, locks, objects: read it to find out), : walkable but another "
                   "level, ^v<> ledge) plus NPC, warp, sign and connection lists. Coordinates are map tiles.",
                   S({}), False),
     "get_screenshot": (t_get_screenshot, "Screenshot of the game screen (240x160).", S({}), False),
@@ -298,7 +299,9 @@ def call(name, args):
             log({"step": steps, "error": f"milestones: {e!r}"})
         content.append({"type": "text", "text": json.dumps({"now": summary(s), "harness": msgs},
                                                           ensure_ascii=False)})
-        log({"step": steps, "tool": name, "args": args, "now": summary(s), "harness": msgs})
+        brief = result.get("result") if isinstance(result, dict) else result  # walk/travel outcome, press traces
+        log({"step": steps, "tool": name, "args": args, "result": json.dumps(brief, ensure_ascii=False)[:300],
+             "now": summary(s), "harness": msgs})
     else:
         log({"step": steps, "tool": name, "args": args})
     return content
