@@ -33,6 +33,7 @@ LOG = os.environ.get("UNBOUND_LOG") or os.path.join(RUN, "log.jsonl")
 LEARN_EVERY = 40  # actions between self-learning checks (asked for every 25-50 steps)
 STALL_AFTER = 15  # actions with no change in map/position/mode/dialog
 TRAINER = 0x8  # gBattleTypeFlags bit
+WILD_RANDOM = 0x4  # gBattleTypeFlags of an ordinary random wild battle (verified on Snorunt, Vanillite)
 KEYS = ["A", "B", "START", "SELECT", "UP", "DOWN", "LEFT", "RIGHT", "L", "R"]
 
 p = None
@@ -105,6 +106,11 @@ def notes(s):
         flags = int(s["battle"]["flags"], 16)
         foes = [b for b in s["battle"]["battlers"] if b["side"] == "opponent"]
         mine = [b for b in s["battle"]["battlers"] if b["side"] == "player"]
+        if not flags & TRAINER and flags != WILD_RANDOM:
+            # Random grass/cave encounters read exactly 0x4; scripted ones (e.g. Binacle on Route 2,
+            # 0x20004) carry extra bits. The user's rule: always catch these.
+            out.append("SPECIAL ENCOUNTER (not a random wild Pokemon): it may never appear again. Catch it: "
+                       "weaken it without knocking it out (status moves help), then throw balls.")
         if flags & TRAINER and foes and mine:
             # Only spend a stronger model where it matters: the agent rightly ignored the note for an
             # easy trainer, and a note it learns to ignore is worse than none.
