@@ -43,6 +43,25 @@ Status: **verified** = values match what's on screen; **plausible** = right shap
 - A few late item names use custom font glyphs to fit 14 bytes (e.g. item 724, Galarica Wreath) and decode with `?`.
 - Ability display aliases (IDs 256–292) aren't applied: names show the shared effect's name (Rayquaza → Cloud Nine, displayed in game as Air Lock).
 
+## Map, collision and events (#8)
+
+`bridge/world.py` builds a viewport (15×10) and a whole-map grid plus NPC, warp, sign and connection lists.
+
+| What | Address | Notes |
+|---|---|---|
+| `gBackupMapLayout` (VMap) | 0x03005040 | verified. s32 width, s32 height, u16* map. Width/height = layout + 15/14 (7-tile border, filled from connected maps). Found in `MapGridGetMetatileIdAt`'s literal pool |
+| Map block (u16) | | metatile ID bits 0–9, collision 10–11, elevation 12–15 |
+| Map layout | `gMapHeader` +0 | s32 width/height, then border, map, primary tileset (+0x10), secondary tileset (+0x14). Use the live pointer: the ROM header's layout field differs for Route 1 |
+| Tileset | | metatile attributes pointer at +0x14, u32 each; behavior = attr & 0x1FF. Primary tileset holds metatiles 0–639 |
+| Map events | `gMapHeader` +4 | counts (objects, warps, coord events, bg events) then 4 pointers. Warp 8 bytes: x, y, elevation, warpId, mapNum, mapGroup. Bg event 12 bytes: x, y, elevation, kind (7 = hidden item) |
+| Connections | `gMapHeader` +0xC | s32 count, pointer to 12-byte entries: direction (1 S, 2 N, 3 W, 4 E), s32 offset, group, num |
+| Map groups | 0x08B70498 | **obfuscated**: each group pointer is XOR'd with 0x00B749DE (Unbound's hook at 0x09ED15D4 replaces `Overworld_GetMapHeaderByGroupAndId`); entries are map header pointers, header +0x14 = map section |
+| Player elevation | object event +0x0B low nibble | |
+
+- **Elevation matters.** Walk-tested on Route 1: from elevation 3 the player can't step onto elevation 5 even with collision 0. The rule (vanilla): blocked unless the player's elevation is 0, or the tile's is 0, 15 or equal. Elevation-0 tiles (stairs, ramps) reset the player's elevation; 15 (bridges) keeps it. The grid shows other-level walkable tiles as `:`.
+- **Walk test** (Route 1, savestate restored after): right 3 tiles then blocked, left 7 then blocked, up 1 then elevation-blocked, all exactly as the grid predicted.
+- **Behavior IDs** match vanilla FireRed's on Route 1 by appearance: 0x02 tall grass, 0x21 sand (snow), 0x23 ice, 0x3B ledge south, 0x60 cave door (warp to Icicle Cave), 0x84 sign. Walk-tested so far: collision and elevation only. Ledges, ice, water and doors are **not yet walk-tested**.
+
 ## Abilities (#4)
 
 Unbound numbers abilities differently from public CFRU, so never use CFRU's `ABILITY_*` constants. Use the ROM's own tables:
