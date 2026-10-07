@@ -9,7 +9,9 @@ Getting Claude (Fable 5.1 / Opus 5.5) to play Pokémon Unbound, a CFRU-based Fir
 
 ## Bridge
 
-Load `bridge/probe.lua` in mGBA 0.10+ (Tools → Scripting → File → Load script). It serves the emulator on 127.0.0.1:8888. Then, from `bridge/`:
+The agent's run uses its own copy of the game in `run/` (gitignored): `run/Unbound.gba` and `run/baseline.ss1`, the fresh-start savestate from #1. Its in-game save (`run/Unbound.sav`) never touches a hand-played save.
+
+`python bridge/launch.py [STATE]` starts an mGBA development build (0.11, which supports `--script`; path in the `MGBA` env var) with the bridge script loaded, unless the bridge is already up. Settings for that build live in its own portable `config.ini` and need the `[override.BPRE]` entries `savetype=FLASH1M` and `hardware=1`. With mGBA 0.10, load `bridge/probe.lua` by hand (Tools → Scripting → File → Load script). Either way the bridge serves 127.0.0.1:8888. Then, from `bridge/`:
 
 - `python state.py`: current mode, map, position, party, battle and dialog
 - `python state.py press UP`: press a key and report what changed
