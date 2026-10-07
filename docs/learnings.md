@@ -46,6 +46,8 @@ Failures, their root causes, and the rule each one taught. Read this before buil
 
 | 2026-10-07 | Two Python edits shipped real line breaks where `\n` escapes were meant (syntax errors) | Code containing backslash escapes was written through a shell heredoc that mangled them | Write code with escapes using the editor tool, not heredocs; run a syntax check after every scripted edit |
 
+| 2026-10-07 | The agent concluded "travel_to keeps looping" and left Bellin Town, its mission's destination | travel_to silently re-routed around a story-blocked cave across half the region (300 steps), and my Phase 1 bot had "reached" Bellin by crossing a map edge that is a dead end (avalanche snow) | Deterministic tools hand surprises back to the model with an explanation; an exit test must reach a place you can actually use, not just a map ID |
+
 ## Signals found along the way
 
 - Battle: player controller `gBattlerControllerFuncs[0]` (0x03004FE0) = 0x0802E439 at the action menu, 0x0802EA11 at the move menu. Cursors: action 0x02023FF8 (0 Fight, 1 Cube, 2 Pokémon, 3 Run), move 0x02023FFC.
