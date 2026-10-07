@@ -1,6 +1,6 @@
 # Unbound 2.1.1.1 RAM addresses
 
-Checked against live RAM in mGBA 0.10.5 with `probe/probe.py`. `probe/state.py` reads all of the verified ones at once.
+Checked against live RAM in mGBA 0.10.5 with `bridge/probe.py`. `bridge/state.py` reads all of the verified ones at once.
 
 Status: **verified** = values match what's on screen; **plausible** = right shape, meaning not proven; **pending** = needs a scene not yet reached.
 
@@ -21,6 +21,7 @@ Status: **verified** = values match what's on screen; **plausible** = right shap
 | `sTextPrinters` | 0x02020034 | verified | 0x24 each. Printer 0: `active` (+0x1B) 1 both while printing (`state` +0x1C = 0, `currentChar` +0 advancing through `gStringVar4`) and while waiting for A (`state` 2) |
 | `gStringVar4` | 0x02021D18 | verified | holds the full expanded NPC message; standard Gen 3 charmap |
 | `gDisplayedStringBattle` | 0x0202298C | verified | "You are challenged by Shadow Grunt!" while that message was on screen |
+| `sLockFieldControls` (ScriptContext2) | 0x03000F9C | verified | u8: 0 walking freely, 1 with the start menu open (callback2 stays `CB2_Overworld`, so this is the only menu signal), back to 0 on close. Found by RAM diff |
 | `Var8000` | 0x020370B8 | plausible | u16 script vars; values change between overworld and NPC dialog |
 | `gNewBS` ptr | 0x0203E038 | plausible | 0x02002D60 in overworld (stale, not NULL), 0x020179B4 in both battles so far (EWRAM heap). Struct layout not checked |
 
@@ -61,5 +62,5 @@ Party, position, map ID and dialog text read correctly across 10 hand-played sce
 
 ## Notes
 
-- Mode detection: battle if callback2 is `BattleMainCB2` (0x08011101), dialog if printer 0 is active, overworld if callback2 is `CB2_Overworld`, else other.
+- Mode detection: battle if callback2 is `BattleMainCB2` (0x08011101), dialog if printer 0 is active, overworld if callback2 is `CB2_Overworld` and field controls aren't locked, else other (menus, cutscenes).
 - `gStringVar4` keeps the last message after the box closes, so only trust it when printer 0 is active.

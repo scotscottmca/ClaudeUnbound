@@ -5,3 +5,4 @@
 *.bps
 __pycache__/
 wiki/
+saves/

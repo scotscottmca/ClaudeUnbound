@@ -5,6 +5,8 @@
     python probe.py step 60
     python probe.py press A [FRAMES]
     python probe.py shot screen.png
+    python probe.py save s.ss1 / load s.ss1
+    python probe.py autosave backups 18000 [KEEP]          # every 5 min, 0 stops
     python probe.py dump 0x02000000 0x40000 before.bin    # snapshot
     python probe.py diff before.bin after.bin [BASE]      # changed bytes, offline
 """
@@ -40,6 +42,9 @@ class Probe:
     def step(self, frames): self.cmd(f"step {frames}")
     def press(self, key, frames=4): self.cmd(f"press {key} {frames}")
     def shot(self, path): self.cmd(f"shot {os.path.abspath(path)}")
+    def save(self, path): self.cmd(f"save {os.path.abspath(path)}")
+    def load(self, path): self.cmd(f"load {os.path.abspath(path)}")
+    def autosave(self, dir, frames, keep=10): self.cmd(f"autosave {os.path.abspath(dir)} {frames} {keep}")
 
 
 def diff(a, b, base=0):
@@ -64,8 +69,10 @@ def main(argv):
         open(args[2], "wb").write(p.range(num(args[0]), num(args[1])))
     elif cmd == "step":
         p.step(num(args[0]))
-    elif cmd == "shot":
-        p.shot(args[0])
+    elif cmd in ("shot", "save", "load"):
+        getattr(p, cmd)(args[0])
+    elif cmd == "autosave":
+        p.autosave(args[0], *map(num, args[1:]))
     elif cmd == "press":
         p.press(args[0], *map(num, args[1:]))
     else:
