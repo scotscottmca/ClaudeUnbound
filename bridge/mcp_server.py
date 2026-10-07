@@ -7,6 +7,7 @@ watchdog warnings (no progress), self-learning checks (every LEARN_EVERY actions
 escalation hints for the model router (#37).
 """
 import base64
+import collections
 import contextlib
 import io
 import json
@@ -36,6 +37,8 @@ KEYS = ["A", "B", "START", "SELECT", "UP", "DOWN", "LEFT", "RIGHT", "L", "R"]
 p = None
 steps = 0
 tracker = milestones.Tracker(os.path.join(os.path.dirname(LOG), "milestones.jsonl"))
+bot.load_dead_edges(os.path.join(os.path.dirname(LOG), "dead_edges.json"))
+arrivals = collections.deque(maxlen=20)  # (map, pos) each time the player ends an action somewhere new
 TALKED = os.path.join(os.path.dirname(LOG), "npcs_talked.json")  # "group,num,localId" of NPCs talked to
 talked = set(json.load(open(TALKED))) if os.path.exists(TALKED) else set()
 
@@ -80,6 +83,17 @@ def notes(s):
                    "screenshot, re-read your objectives, try something different, or load_state the last "
                    "good save." + (" ESCALATE to the expert subagent: the watchdog has fired repeatedly."
                                    if watchdog_fired >= 2 else ""))
+    spot = (s["map"]["group"], s["map"]["num"], tuple(s["pos"]))
+    if s["mode"] == "overworld" and (not arrivals or arrivals[-1] != spot):
+        arrivals.append(spot)
+        if arrivals.count(spot) >= 4:  # moving, so the no-change watchdog can't see it
+            watchdog_fired += 1
+            arrivals.clear()
+            out.append(f"WATCHDOG: you keep coming back to {s['map']['name']} {s['pos']} (4 times in the last 20 "
+                       "moves): you're going in circles. Stop. Re-read memory/map_notes.md and objectives.md for "
+                       "this place, take a screenshot, and pick a genuinely different route or goal."
+                       + (" ESCALATE to the expert subagent: the watchdog has fired repeatedly."
+                          if watchdog_fired >= 2 else ""))
     if steps and steps % LEARN_EVERY == 0:
         out.append(f"LEARNING CHECK (action {steps}): review what happened since the last check. Record "
                    "new facts in memory/, add a learnings.md entry for anything that failed or surprised "

@@ -27,10 +27,34 @@ TILE_FRAMES = 8  # Unbound walks a tile in 8 frames when the key is held (measur
 SLIDE_ICE = 0x23  # slides you; thin (0x26) and cracked (0x27) ice are puzzles, still avoided
 AVOID = W.WATER | (W.ICE - {SLIDE_ICE}) | W.FORCED | {0x13}
 MAX_STEPS = 600
+POCKET = 30  # an arrival area this small (tiles reachable) is a dead end, not the place itself
+DEAD_EDGES_FILE = None  # set by the MCP server: map-edge tiles learned to lead into a pocket
+DEAD_EDGES = set()
 
 
-def plan(w, goals, blocked, grass_cost=8):
-    """Cheapest key sequence from the player to any goal tile. State is (x, y, elevation)."""
+def load_dead_edges(path):
+    global DEAD_EDGES_FILE, DEAD_EDGES
+    DEAD_EDGES_FILE = path
+    DEAD_EDGES = set(json.load(open(path))) if os.path.exists(path) else set()
+
+
+def _note_dead_edge(key):
+    DEAD_EDGES.add(key)
+    if DEAD_EDGES_FILE:
+        with open(DEAD_EDGES_FILE, "w") as f:
+            json.dump(sorted(DEAD_EDGES), f)
+
+
+def reachable(w):
+    """How many tiles the player can walk to from here (a small number means a dead-end pocket)."""
+    seen = set()
+    plan(w, set(), set(), visit=seen)
+    return len(seen)
+
+
+def plan(w, goals, blocked, grass_cost=8, visit=None):
+    """Cheapest key sequence from the player to any goal tile. State is (x, y, elevation).
+    VISIT, if given, collects every tile the search reached."""
     # NPCs wander: only one next to the player is a wall; the rest just cost extra.
     px, py = w["player"]
     npcs = {(n["x"], n["y"]) for n in w["npcs"]}
@@ -50,6 +74,8 @@ def plan(w, goals, blocked, grass_cost=8):
             return path[::-1]
         if d > dist[(x, y, e, last)]:
             continue
+        if visit is not None:
+            visit.add((x, y))
         for key, (dx, dy) in DIRS.items():
             nx, ny = x + dx, y + dy
             if not (0 <= nx < w["width"] and 0 <= ny < w["height"]) or (nx, ny) in occupied:
@@ -176,9 +202,26 @@ def battle(p):
 
 def go(p, target, reroute=True):
     blocked, last, still, unknown, path, recent = set(), None, 0, 0, [], collections.deque(maxlen=20)
-    hops, last_next, closed, warp_try = [], None, set(), 0
+    hops, last_next, closed, warp_try, crossed = [], None, set(), 0, None
     for step in range(MAX_STEPS):
         s = get_state(p)
+        here = (s["map"]["group"], s["map"]["num"])
+        if crossed and here != crossed[0] and s["mode"] == "overworld":
+            # Just crossed a map edge: a tiny reachable area means a dead-end pocket ("in the town's
+            # map, but not actually in the town"). Learn the edge and don't count it as arriving.
+            room = reachable(W.read_world(p))
+            if room < POCKET:
+                (g, n), (ex, ey) = crossed
+                _note_dead_edge(f"{g},{n},{ex},{ey}")
+                msg = (f"that edge from {W.map_name(p, g, n)} ({ex}, {ey}) leads into a dead-end pocket of "
+                       f"{s['map']['name']} ({room} tiles reachable). Learned: it's avoided from now on.")
+                if not reroute:
+                    raise SystemExit(f"stopped: {msg} Step back out (the way you came) and travel again.")
+                print(f"{step}: {msg}")
+                press(p, {"DOWN": "UP", "UP": "DOWN", "LEFT": "RIGHT", "RIGHT": "LEFT"}[crossed[2]])
+                crossed = None
+                continue
+            crossed = None
         where = (s["map"]["name"], tuple(s["pos"]), s["mode"], s.get("dialog"))
         still = still + 1 if where == last else 0
         last = where
@@ -191,7 +234,6 @@ def go(p, target, reroute=True):
         if s["map"]["name"] == target:
             print(f"reached {target} at {s['pos']} after {step} steps")
             return
-        here = (s["map"]["group"], s["map"]["num"])
         if here not in hops:  # first step, or knocked off the route (e.g. whited out)
             hops = [here] + (W.route(p, here, target, closed) or stop(p, f"no open map route to {target}"))
             print(f"{step}: route {' > '.join(W.map_name(p, *h) + str(list(h)) for h in hops)}")
@@ -227,7 +269,9 @@ def go(p, target, reroute=True):
             alive = [m for m in s["party"] if not m["hp"].startswith("0/")]
             lead = alive[0] if alive else None  # a fainted first slot isn't the lead
             weak = lead and int(lead["hp"].split("/")[0]) * 3 < int(lead["hp"].split("/")[1])
-            path = plan(w, goals - blocked, blocked, grass_cost=100 if weak else 8)
+            dead = {(int(k.split(",")[2]), int(k.split(",")[3])) for k in DEAD_EDGES
+                    if k.startswith(f"{here[0]},{here[1]},")}
+            path = plan(w, goals - blocked - dead, blocked, grass_cost=100 if weak else 8)
             if path is None:
                 # Story gates (e.g. an invisible blocker on a cave mouth) close a hop the ROM
                 # graph thinks is open: close it and route around.
@@ -265,6 +309,8 @@ def go(p, target, reroute=True):
             warp_try += 1
             if warp_try > 4:
                 stop(p, "standing on the warp but it didn't trigger in any direction")
+        if final:
+            crossed = (here, tuple(w["player"]), key)
         t = press(p, key)
         print(f"{step}: {s['map']['name']} {w['player']} {key} -> {t['after']['pos']} {t['changed']}")
         if t["moved"] and path:

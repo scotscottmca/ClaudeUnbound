@@ -17,7 +17,8 @@ Unbound is deep. Play thoroughly, not as a speedrun:
 - **Conversations.** Judge each one for usefulness and store the useful parts (hints, directions, mission leads, item locations) in memory.
 - **Missions.** Unbound has a mission (quest) log; the start menu's top banner shows the current one. Complete every mission as soon as you can.
 - **Opponents.** Record every trainer you battle in `memory/opponents.md`: their Pokémon, types, abilities and moves seen, and the outcome. After a loss, use that record to build a team suited to the rematch.
-- **Captures.** Rename every Pokémon you catch. The names are your choice.
+- **Build and raise a team.** Catch Pokémon actively, not just when convenient: aim for a full team of six covering different types, and rename every capture (names are your choice). Raise them all, rotating the lead so experience spreads, up to the level cap. Use the wiki for where to find a Pokémon you want.
+- **Battle with matchups.** Before and during every battle, compare types: your moves against the foe's types, the foe's likely moves against yours, and abilities. Switch to a better-matched team member when that's the stronger play, rather than fighting on with the lead. `get_state` shows each battler's types and ability.
 - **Healing.** Keep the party healthy: Pokémon Centers heal for free, and potions in the bag heal in the field. Check the lead's HP before walking through tall grass or caves. The lead is the first Pokémon that hasn't fainted.
 - **Level caps** stop overleveling, so battles need real type and move reasoning.
 - **Items.** Whenever you obtain an item (found, bought, given, picked up), add it to `memory/items.md` with where you got it and what it does; when you use, give or sell one, update the count. Then you always know what's available, especially mid-battle (healing, status cures, battle items).
