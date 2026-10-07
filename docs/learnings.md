@@ -34,6 +34,7 @@ Failures, their root causes, and the rule each one taught. Read this before buil
 | 2026-10-07 | Route search took a shortcut through map 4/9 | 4/9 is a hub linking every town; not walkable | 7 |
 | 2026-10-07 | Bot couldn't enter Icicle Cave | Invisible story-gate object on the cave mouth; the ROM graph says open | 7 |
 | 2026-10-07 | Bot stopped on an "unknown screen" | It was the wild-encounter wipe (callback2 0x080565A9) | 8 |
+| 2026-10-07 | Wiki search for "Potion" / "Berry Juice" found no item page | Assumed unboundwiki has a page per item; `items/` only covers evolution items, key items and category lists. Medicine and most held items appear only in location item tables and Pokémon held-item rows | 1 (check what the corpus contains before writing a query against it) |
 
 | 2026-10-07 | My run monitor never fired during the first 200 agent actions | `grep --line-buffered` piped into `cut`, which buffers; events sat in the pipe | 3: every pipe stage in a watch must flush per line (`awk ... fflush()`); verify a watch fires once before trusting its silence |
 | 2026-10-07 | The agent asked `walk_to` for a shelf tile and fell back to one press per turn | Tools assumed the target is walkable; agents aim at what they see (NPCs, signs, objects) | Design tools for the target the model will naturally give (walk next to it and face it) |
