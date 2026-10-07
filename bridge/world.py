@@ -62,6 +62,7 @@ def rom():
 
 def header_of(_p, group, num):
     """ROM map header address, via Unbound's XOR-obfuscated map-group table."""
+    p = rom()
     return u32(p, (u32(p, MAP_GROUPS + 4 * group) ^ MAP_GROUPS_KEY) + 4 * num)
 
 
