@@ -12,7 +12,7 @@ A harness for Claude to play Pokémon Unbound 2.1.1.1 (a CFRU-based FireRed romh
 
 No build, test suite or linter. Python scripts in `bridge/` are run directly, from inside `bridge/` (they import each other as top-level modules).
 
-- `python bridge/launch.py [STATE]`: start the mGBA dev build (0.11+, needs `--script`; path from the `MGBA` env var) with `probe.lua`, unless something already serves 127.0.0.1:8888. The build's portable `config.ini` needs `[override.BPRE]` `savetype=FLASH1M` and `hardware=1`. On mGBA 0.10, load `bridge/probe.lua` by hand via Tools → Scripting.
+- `python bridge/launch.py [STATE]`: start the mGBA dev build (0.11+, needs `--script`; path from the `MGBA` env var) with `probe.lua`, unless something already serves 127.0.0.1:8888. The build's portable `config.ini` needs `[override.BPRE]` `savetype=FLASH1M` and `hardware=1`, and `[ports.qt]` `audioSync=0` `videoSync=0` (with sync on, an instance started while the remote desktop session is disconnected never runs a frame, so the bridge accepts no clients). On mGBA 0.10, load `bridge/probe.lua` by hand via Tools → Scripting.
 - `python state.py` → state JSON; `python state.py press UP [FRAMES] [SETTLE]` → traced press (before/after snapshot, `moved`, `changed`).
 - `python world.py [full]` → collision grid (viewport or whole map) plus NPC/warp/sign/connection lists.
 - `python probe.py read32|range|dump|diff|step|press|shot|save|load|autosave ...` → raw bridge access; `dump` + `diff` is the standard way to find new RAM addresses.
@@ -25,7 +25,7 @@ ROMs, saves and savestates are gitignored and never committed. `rom/` holds the 
 
 Layered per `docs/research.md`: thin, verified state layer + deterministic tools, with the model supplying policy. Phases 0–1 (ground truth, bridge) are what exists; the MCP tool surface and agent loop (Phase 2) are not built yet.
 
-- **`probe.lua`** runs inside mGBA: a line protocol on port 8888, one reply line per command, `err ...` on failure. Frame-based commands (`step`, `press`) are pending until done; **only one client may drive the emulator at a time**, and a second concurrent command gets `err busy`. After an interrupted run, kill leftover client processes before starting new ones.
+- **`probe.lua`** runs inside mGBA: a line protocol on port 8888, one reply line per command, `err ...` on failure. Frame-based commands (`step`, `press`) are pending until done; **only one client may drive the emulator at a time**, and a second client's frame command gets `err busy` (reads and `shot` still go through). After an interrupted run, kill leftover client processes before starting new ones.
 - **`probe.py`** `Probe` is the Python client every other module uses. `range` is chunked at 0x1000 to keep reply lines small.
 - **`state.py`** holds the verified RAM constants and `get_state()`. Mode (`overworld`/`battle`/`dialog`/`other`) is derived from `gMain.callback2`, `sLockFieldControls` (the only start-menu signal) and text-printer activity, not from `gBattleTypeFlags`, which is never cleared after battle. Party data is CFRU's unencrypted layout; use `gPlayerPartyCount`, not the save block copy. `press()` diffs a small snapshot rather than the screen (weather animates every frame).
 - **`world.py`** reads the live map layout (`gBackupMapLayout`, 7-tile border) and metatile behaviors into a grid that accounts for elevation, ledges, water, ice, forced movement and warps; map headers come from an XOR-obfuscated group table in ROM.
