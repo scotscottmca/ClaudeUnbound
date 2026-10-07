@@ -27,7 +27,7 @@ from state import get_state  # noqa: E402
 
 CLAUDE = shutil.which("claude") or os.path.expanduser(r"~\.local\bin\claude.exe")
 CONTEXT_LIMIT = 160_000  # rotate to a fresh session past this (tokens re-read every turn)
-MAIN_MODEL = "claude-sonnet-5-5"  # the router: escalates to Opus 5.5 / Fable 5.1 subagents
+MAIN_MODEL = "claude-haiku-5-5"  # default tier; verified by Sonnet 5.5, escalates to Opus 5.5 then Fable 5.1
 TOOLS = ["mcp__unbound", "Read", "Write", "Edit", "Glob", "Grep", "Task", "Agent"]
 MEMORY_SEED = {"objectives.md": "# Objectives\n\n- Goal: earn the first badge (Dresco Town gym).\n- Next: find out where I am and what the current mission says.\n",
                "learnings.md": "# Learnings\n\n"}
