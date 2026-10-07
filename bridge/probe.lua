@@ -1,15 +1,18 @@
--- RAM probe server for mGBA 0.10+ (Tools > Scripting > File > Load script).
+-- Bridge server for mGBA 0.10+ (Tools > Scripting > File > Load script).
 -- Line protocol on 127.0.0.1:8888, one reply line per command:
 --   read8|read16|read32 ADDR   -> hex value
 --   range ADDR LEN             -> hex bytes
 --   step N                     -> "ok" after N frames
 --   shot PATH                  -> save a PNG screenshot, "ok"
 --   press KEY [FRAMES]         -> hold KEY (A B START SELECT UP DOWN LEFT RIGHT L R) for FRAMES (default 4), release, "ok"
+--   save PATH / load PATH      -> savestate to/from file (everything, incl. RTC and save data), "ok"
+--   autosave DIR FRAMES [KEEP] -> every FRAMES frames save DIR/auto-N.ss1, cycling N over KEEP files (default 10); FRAMES 0 stops
 -- Errors reply "err <message>".
 
 local PORT = 8888
 local pending -- frame-based command waiting to finish: {sock, frames, key}
 local closed = {}
+local autosave -- {dir, every, keep, frames, n}
 
 local function send(sock, s)
 	local i = 1
@@ -47,6 +50,22 @@ local function handle(sock, line)
 	elseif cmd == "shot" then
 		emu:screenshot(line:match("^shot%s+(.+)$"))
 		reply(sock, "ok")
+	elseif cmd == "save" or cmd == "load" then
+		local path = line:match("^%S+%s+(.+)$")
+		if not path then return reply(sock, "err missing path") end
+		local ok
+		if cmd == "save" then ok = emu:saveStateFile(path) else
+			pending = nil
+			emu:setKeys(0)
+			ok = emu:loadStateFile(path)
+		end
+		reply(sock, ok and "ok" or "err " .. cmd .. " failed: " .. path)
+	elseif cmd == "autosave" then
+		local dir, every, keep = line:match("^autosave%s+(.-)%s+(%d+)%s*(%d*)$")
+		every = tonumber(every)
+		if not every then return reply(sock, "err usage: autosave DIR FRAMES [KEEP]") end
+		autosave = every > 0 and { dir = dir, every = every, keep = tonumber(keep) or 10, frames = 0, n = 0 } or nil
+		reply(sock, "ok")
 	elseif cmd == "step" and a then
 		if a <= 0 then return reply(sock, "ok") end
 		pending = { sock = sock, frames = a }
@@ -54,6 +73,15 @@ local function handle(sock, line)
 end
 
 callbacks:add("frame", function()
+	if autosave then
+		autosave.frames = autosave.frames + 1
+		if autosave.frames >= autosave.every then
+			autosave.frames = 0
+			local path = string.format("%s/auto-%d.ss1", autosave.dir, autosave.n)
+			if not emu:saveStateFile(path) then console:error("probe: autosave failed: " .. path) end
+			autosave.n = (autosave.n + 1) % autosave.keep
+		end
+	end
 	if not pending then return end
 	pending.frames = pending.frames - 1
 	if pending.frames > 0 then return end

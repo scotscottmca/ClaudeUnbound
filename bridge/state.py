@@ -1,6 +1,7 @@
 """One-shot readout of verified Unbound RAM (see docs/addresses.md). Needs probe.lua running.
 
     python state.py
+    python state.py press UP [FRAMES] [SETTLE]   # traced press
 """
 import struct
 import sys
@@ -18,6 +19,7 @@ BATTLE_MONS = 0x02023BE4  # 4 x 0x58
 TEXT_PRINTERS = 0x02020034  # 0x24 each
 STRING_VAR4 = 0x02021D18
 DISPLAYED_STRING_BATTLE = 0x0202298C
+LOCK_FIELD_CONTROLS = 0x03000F9C  # u8, 1 while a script/menu/dialog holds the player
 CB2_OVERWORLD = 0x080565B5
 CB2_BATTLE = 0x08011101  # BattleMainCB2
 
@@ -91,12 +93,37 @@ def read_state(p):
     printer = p.range(TEXT_PRINTERS, 0x24)
     s["printer0_active"] = printer[0x1B]
     s["dialog"] = decode(p.range(STRING_VAR4, 0x200))
+    s["locked"] = p.read8(LOCK_FIELD_CONTROLS)
     s["mode"] = ("battle" if in_battle else "dialog" if printer[0x1B]
-                 else "overworld" if cb2 == CB2_OVERWORLD else "other")
+                 else "overworld" if cb2 == CB2_OVERWORLD and not s["locked"] else "other")
     return s
+
+
+def _snapshot(p):
+    """Small state that changes on anything meaningful. Whole-screen diffs don't work:
+    weather and animated tiles change the screen every frame."""
+    s = read_state(p)
+    printer = p.range(TEXT_PRINTERS, 0x24)
+    return {"map": s["map"], "pos": s["pos"], "facing": s.get("facing"), "mode": s["mode"],
+            "cb2": s["cb2"], "locked": s["locked"], "printer": (printer[0x1B], printer[0x1C], printer[0:4].hex())}
+
+
+def press(p, key, frames=4, settle=16):
+    """Press KEY, wait SETTLE frames, and report what changed."""
+    before = _snapshot(p)
+    p.press(key, frames)
+    p.step(settle)
+    after = _snapshot(p)
+    return {"key": key, "before": before, "after": after,
+            "moved": (before["map"], before["pos"]) != (after["map"], after["pos"]),
+            "changed": [k for k in before if before[k] != after[k]]}
 
 
 if __name__ == "__main__":
     sys.stdout.reconfigure(encoding="utf-8")
-    for k, v in read_state(Probe()).items():
-        print(f"{k:15} {v}")
+    p = Probe()
+    if sys.argv[1:2] == ["press"]:
+        print(press(p, sys.argv[2], *map(int, sys.argv[3:])))
+    else:
+        for k, v in read_state(p).items():
+            print(f"{k:15} {v}")
