@@ -84,7 +84,7 @@ def read_state(p):
         for i in range(4):
             b = p.range(BATTLE_MONS + i * 0x58, 0x58)
             hp, level, _, max_hp = struct.unpack("<HBBH", b[0x28:0x2E])
-            s["battlers"].append({"species": struct.unpack("<H", b[0:2])[0], "level": level,
+            s["battlers"].append({"species": struct.unpack("<H", b[0:2])[0], "level": level, "ability": b[0x20],
                                   "hp": (hp, max_hp), "nick": decode(b[0x30:0x3B])})
         s["battle_text"] = decode(p.range(DISPLAYED_STRING_BATTLE, 0x100))
 
