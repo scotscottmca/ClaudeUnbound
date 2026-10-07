@@ -3,11 +3,13 @@
 --   read8|read16|read32 ADDR   -> hex value
 --   range ADDR LEN             -> hex bytes
 --   step N                     -> "ok" after N frames
+--   shot PATH                  -> save a PNG screenshot, "ok"
 --   press KEY [FRAMES]         -> hold KEY (A B START SELECT UP DOWN LEFT RIGHT L R) for FRAMES (default 4), release, "ok"
 -- Errors reply "err <message>".
 
 local PORT = 8888
 local pending -- frame-based command waiting to finish: {sock, frames, key}
+local closed = {}
 
 local function send(sock, s)
 	local i = 1
@@ -42,6 +44,9 @@ local function handle(sock, line)
 	elseif cmd == "read16" and a then reply(sock, string.format("%x", emu:read16(a)))
 	elseif cmd == "read32" and a then reply(sock, string.format("%x", emu:read32(a)))
 	elseif cmd == "range" and a and b then reply(sock, hex(emu:readRange(a, b)))
+	elseif cmd == "shot" then
+		emu:screenshot(line:match("^shot%s+(.+)$"))
+		reply(sock, "ok")
 	elseif cmd == "step" and a then
 		if a <= 0 then return reply(sock, "ok") end
 		pending = { sock = sock, frames = a }
@@ -71,6 +76,10 @@ server:add("received", function()
 				if err ~= socket.ERRORS.AGAIN then
 					console:log("probe: client closed (" .. tostring(err) .. ")")
 					sock:close()
+					-- mGBA 0.10 doesn't invalidate a closed socket, so GC would close the
+					-- handle again and kill whichever new client Windows reused it for.
+					-- ponytail: leaks one small table per connection; fine for a dev probe.
+					table.insert(closed, sock)
 				end
 				return
 			end
