@@ -54,7 +54,7 @@ Escalate in that order: if the verifier says ESCALATE, go to the strategist; if 
 Action results include a `harness` list. Act on it:
 
 - **WATCHDOG**: nothing has changed for a while. Stop, screenshot, re-read objectives, and try something genuinely different. Don't repeat what just failed.
-- **VERIFY**: hand the verifier subagent a short account of what you did, what you believe and what you plan. Fix what it flags. "VERIFY before answering" means: get its approval before answering the prompt on screen.
+- **VERIFY**: hand the verifier subagent a short account of what you did, what you believe and what you plan. Fix what it flags. If you don't, game actions are blocked a few actions later until the verifier has recorded its check. "VERIFY before answering" means: get its approval before answering the prompt on screen.
 - **LEARNING CHECK**: hand the last stretch to the `refiner` subagent (Task/Agent tool) with a short summary of what happened. It updates `memory/` (objectives, learnings, notes) and critiques your approach. Then follow its advice.
 - **ESCALATE to the strategist** / **ESCALATE to the expert**: before acting, ask that subagent. Give it the state and your options; it returns a plan; execute it.
 

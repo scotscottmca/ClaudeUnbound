@@ -32,6 +32,8 @@ RUN = os.path.normpath(os.path.join(HERE, "..", "run"))
 STATES = os.path.join(RUN, "states")
 LOG = os.environ.get("UNBOUND_LOG") or os.path.join(RUN, "log.jsonl")
 VERIFY_EVERY = 20  # actions between Sonnet verification checks
+VERIFY_GRACE = 3  # actions allowed after a VERIFY note before game actions are blocked
+verify_due = 0  # action number when verification became due (0: none pending)
 IRREVERSIBLE = ("forget", "forgot", "delete", "release", "toss", "throw away", "discard", "give up", "overwrite", "stop learning")
 LEARN_EVERY = 40  # actions between self-learning checks (asked for every 25-50 steps)
 STALL_AFTER = 15  # actions with no change in map/position/mode/dialog
@@ -99,11 +101,14 @@ def notes(s):
                        "this place, take a screenshot, and pick a genuinely different route or goal."
                        + (" ESCALATE to the expert subagent: the watchdog has fired repeatedly."
                           if watchdog_fired >= 2 else ""))
+    global verify_due
     if steps and steps % VERIFY_EVERY == 0 and steps % LEARN_EVERY:
+        verify_due = verify_due or steps
         out.append(f"VERIFY (action {steps}): ask the verifier subagent to check the last stretch against the game "
                    "state: what you did, what you believe, what you plan next. Follow its corrections.")
     text = (s.get("dialog") or "").lower()
     if s["mode"] == "dialog" and text.rstrip().endswith("?") and any(w in text for w in IRREVERSIBLE):
+        verify_due = verify_due or steps
         out.append("VERIFY before answering: this looks irreversible. Ask the verifier subagent to approve your "
                    "answer first.")
     if steps and steps % LEARN_EVERY == 0:
@@ -329,6 +334,14 @@ def t_run_away(a):
         return {"result": str(e)}
 
 
+def t_record_verification(a):
+    """Called by the verifier subagent after checking; clears the verification gate."""
+    global verify_due
+    verify_due = 0
+    log({"step": steps, "verification": a.get("verdict", "")[:500]})
+    return {"recorded": True}
+
+
 def t_read_memory(a):
     return {"addr": hex(a["addr"]), "hex": p.range(a["addr"], min(a["length"], 0x1000)).hex(" ")}
 
@@ -389,6 +402,9 @@ TOOLS = {
               "when text or a prompt (level-up, learning a move) needs you.",
               S({"move": {"type": "string"}}, ["move"]), True),
     "run_away": (t_run_away, "In a wild battle: choose Run and wait for the result.", S({}), True),
+    "record_verification": (t_record_verification, "For the verifier subagent only: record your verdict after "
+                            "checking the playing agent. Clears the verification gate.",
+                            S({"verdict": {"type": "string"}}, ["verdict"]), False),
     "read_memory": (t_read_memory, "Read up to 4096 bytes of GBA memory (hex). For discovering RAM by "
                     "diffing: read, act, read again. Use docs/addresses.md knowledge sparingly.",
                     S({"addr": {"type": "integer"}, "length": {"type": "integer"}}, ["addr", "length"]), False),
@@ -398,6 +414,14 @@ TOOLS = {
 def call(name, args):
     global steps, p
     fn, _, _, is_action = TOOLS[name]
+    if is_action and verify_due and steps - verify_due >= VERIFY_GRACE:
+        # The default tier ignored VERIFY notes (gym-1 run, Haiku 5.5): a note it can skip is only a
+        # suggestion, so game actions wait until the verifier subagent records a check.
+        msg = (f"BLOCKED: verification pending since action {verify_due}. Consult the verifier subagent (Agent "
+               "tool, subagent_type 'verifier') with what you did, believe and plan; it records the check. Read-only "
+               "tools still work.")
+        log({"step": steps, "tool": name, "args": args, "blocked": True})
+        return [{"type": "text", "text": msg}]
     mode_before = None
     try:
         mode_before = raw(p)["mode"] if is_action else None
