@@ -86,6 +86,7 @@ def chunk(ws, first):
         proc = subprocess.Popen(args, cwd=ws, stdout=subprocess.PIPE, stdin=subprocess.DEVNULL,
                                 text=True, encoding="utf-8", errors="replace")
         context = 0
+        tokens = {}  # model -> token counts, for chunks that end without a result event (rotation)
         for line in proc.stdout:
             out.write(line)
             try:
@@ -98,11 +99,15 @@ def chunk(ws, first):
                 print(f"  context {context // 1000}k > {CONTEXT_LIMIT // 1000}k: rotating to a fresh session")
                 proc.terminate()
                 proc.wait()
-                return {"rotated": True, "result": f"rotated at {context} context tokens"}, time.time() - started
+                return ({"rotated": True, "result": f"rotated at {context} context tokens", "usage": tokens,
+                         "total_cost_usd": None}, time.time() - started)
             if ev.get("type") == "assistant":
                 u = ev["message"].get("usage") or {}
                 context = sum(u.get(k, 0) or 0 for k in ("input_tokens", "cache_read_input_tokens",
                                                           "cache_creation_input_tokens"))
+                t = tokens.setdefault(ev["message"].get("model", "?"), {})
+                for k in ("input_tokens", "cache_read_input_tokens", "cache_creation_input_tokens", "output_tokens"):
+                    t[k] = t.get(k, 0) + (u.get(k, 0) or 0)
                 for block in ev["message"].get("content", []):
                     if block.get("type") == "text" and block["text"].strip():
                         print("  agent:", block["text"].strip()[:300])
