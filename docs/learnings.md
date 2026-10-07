@@ -34,6 +34,7 @@ Failures, their root causes, and the rule each one taught. Read this before buil
 | 2026-10-07 | Route search took a shortcut through map 4/9 | 4/9 is a hub linking every town; not walkable | 7 |
 | 2026-10-07 | Bot couldn't enter Icicle Cave | Invisible story-gate object on the cave mouth; the ROM graph says open | 7 |
 | 2026-10-07 | Bot stopped on an "unknown screen" | It was the wild-encounter wipe (callback2 0x080565A9) | 8 |
+| 2026-10-07 | Wiki search for "Potion" / "Berry Juice" found no item page | Assumed unboundwiki has a page per item; `items/` only covers evolution items, key items and category lists. Medicine and most held items appear only in location item tables and Pokémon held-item rows | 1 (check what the corpus contains before writing a query against it) |
 
 ## Signals found along the way
 
