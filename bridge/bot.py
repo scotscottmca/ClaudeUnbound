@@ -164,7 +164,7 @@ def go(p, target, reroute=True):
             path, blocked = [], set()
         nxt = hops[hops.index(here) + 1]
         if nxt != last_next:
-            path, blocked, last_next = [], set(), nxt
+            path, blocked, last_next, warp_try = [], set(), nxt, 0
         r = raw(p)
         if r["mode"] == "battle" or r["cb2"] == CB2_BATTLE_PARTY:
             print(f"{step}: battle -> leaving")
