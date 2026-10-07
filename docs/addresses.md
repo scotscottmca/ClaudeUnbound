@@ -25,6 +25,23 @@ Status: **verified** = values match what's on screen; **plausible** = right shap
 | `Var8000` | 0x020370B8 | plausible | u16 script vars; values change between overworld and NPC dialog |
 | `gNewBS` ptr | 0x0203E038 | plausible | 0x02002D60 in overworld (stale, not NULL), 0x020179B4 in both battles so far (EWRAM heap). Struct layout not checked |
 
+## ROM name tables (#6)
+
+`bridge/tables.py` builds `bridge/names.json` from these, checking each against known names:
+
+| Table | ROM address | Layout | Count |
+|---|---|---|---|
+| Species names | 0x0966A98C | 11 bytes each | 1,294 (0–1293, last is Urshifu) |
+| Move names | 0x08A40A10 | 13 bytes each | 923 |
+| Ability names | 0x08A36398 | 17 bytes each | 293 |
+| Items | 0x08876200 | 44-byte item structs, name in the first 14 bytes, item ID at +14 | 729 |
+| Map section names | 0x083F1CAC | u32 pointers, index = mapsec − 0x58 | 109 (0x58–0xC4) |
+
+- A map's name is its map section's name: `gMapHeader` +0x14, e.g. 0x85 Shadow Base, 0x65 Route 1. Indoor maps share their town's section.
+- The vanilla item table at 0x083DB028 is unused (no references); the live one is the repointed copy.
+- A few late item names use custom font glyphs to fit 14 bytes (e.g. item 724, Galarica Wreath) and decode with `?`.
+- Ability display aliases (IDs 256–292) aren't applied: names show the shared effect's name (Rayquaza → Cloud Nine, displayed in game as Air Lock).
+
 ## Abilities (#4)
 
 Unbound numbers abilities differently from public CFRU, so never use CFRU's `ABILITY_*` constants. Use the ROM's own tables:
