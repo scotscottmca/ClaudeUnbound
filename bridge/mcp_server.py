@@ -19,6 +19,7 @@ import time
 import traceback
 
 import bot
+import battle
 import milestones
 import moves
 import wiki
@@ -305,6 +306,20 @@ def t_load_state(a):
     return {"loaded": a["name"]}
 
 
+def t_fight(a):
+    try:
+        return {"result": battle.fight(p, a["move"])}
+    except SystemExit as e:
+        return {"result": str(e)}
+
+
+def t_run_away(a):
+    try:
+        return {"result": battle.run(p)}
+    except SystemExit as e:
+        return {"result": str(e)}
+
+
 def t_read_memory(a):
     return {"addr": hex(a["addr"]), "hex": p.range(a["addr"], min(a["length"], 0x1000)).hex(" ")}
 
@@ -357,6 +372,11 @@ TOOLS = {
                     S({"query": {"type": "string"}, "n": {"type": "integer"}}, ["query"]), False),
     "wiki_read": (t_wiki_read, "Read a wiki page found with wiki_search (pass its url).",
                   S({"page": {"type": "string"}}, ["page"]), False),
+    "fight": (t_fight, "In battle: use a move by name (e.g. 'Water Gun'). Opens Fight, picks the move, "
+              "confirms (default target in double battles), and waits for your next turn. Stops and says so "
+              "when text or a prompt (level-up, learning a move) needs you.",
+              S({"move": {"type": "string"}}, ["move"]), True),
+    "run_away": (t_run_away, "In a wild battle: choose Run and wait for the result.", S({}), True),
     "read_memory": (t_read_memory, "Read up to 4096 bytes of GBA memory (hex). For discovering RAM by "
                     "diffing: read, act, read again. Use docs/addresses.md knowledge sparingly.",
                     S({"addr": {"type": "integer"}, "length": {"type": "integer"}}, ["addr", "length"]), False),
