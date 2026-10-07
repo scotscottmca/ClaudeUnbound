@@ -34,6 +34,7 @@ local function hex(data)
 end
 
 local function handle(sock, line)
+	if pending then return reply(sock, "err busy: another client's command is running") end
 	local cmd, a, b = line:match("^(%S+)%s*(%S*)%s*(%S*)")
 	if cmd == "press" then
 		local key = C.GBA_KEY[a:upper()]
