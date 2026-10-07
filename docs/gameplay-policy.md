@@ -8,6 +8,10 @@ How Claude should play Unbound. Unbound is very in-depth, so the goal is a thoro
 - Enter every building.
 - Read every sign and notice board **once** and store what matters in memory (notice boards always: they carry important information). Don't re-read them.
 
+## Field obstacles
+
+- Ignore cuttable trees, breakable rocks and boulders until the team can use the matching field move (Cut, Rock Smash, Strength); note them and return later. Decided 2026-10-07.
+
 ## Conversations
 
 - Evaluate every conversation for usefulness and store the useful parts in memory.
@@ -20,6 +24,7 @@ How Claude should play Unbound. Unbound is very in-depth, so the goal is a thoro
 
 ## Pokémon
 
+- Always catch special (non-random) encounters: Pokémon met as visible objects or events. Decided 2026-10-07.
 - Rename every Pokémon captured. Names are entirely Claude's choice.
 - Catch Pokémon actively to build a full, type-diverse team of six, and raise all of them (rotate the lead), up to the level caps. Decided 2026-10-07.
 
