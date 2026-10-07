@@ -14,12 +14,14 @@ How Claude should play Unbound. Unbound is very in-depth, so the goal is a thoro
 
 ## Battles
 
+- Play the type matchup: compare move types against the foe's types (and the foe's against yours), and switch to a better-matched Pokémon mid-battle when that's the stronger play. Decided 2026-10-07.
 - Record every battle opponent, including their Pokémon's types and abilities.
 - After a defeat, use that record to build a team suited to the rematch.
 
 ## Pokémon
 
 - Rename every Pokémon captured. Names are entirely Claude's choice.
+- Catch Pokémon actively to build a full, type-diverse team of six, and raise all of them (rotate the lead), up to the level caps. Decided 2026-10-07.
 
 ## Quests
 
