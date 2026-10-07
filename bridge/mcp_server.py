@@ -143,12 +143,16 @@ def view():
 
 def t_get_state(_):
     s = get_state(p)
+    try:
+        mv = view()
+    except ValueError as e:  # the map is still loading (or a special screen): state without the map view
+        mv = {"unavailable": str(e)}
     if s.get("battle"):
         try:
             s["battle"]["matchups"] = moves.matchups(s)
         except Exception as e:  # hints only: never break get_state
             s["battle"]["matchups"] = f"unavailable: {e!r}"
-    return {**s, "map_view": view()}
+    return {**s, "map_view": mv}
 
 
 def t_get_screenshot(_):

@@ -118,11 +118,15 @@ def route(p, start, target_name, closed=(), max_maps=400):
 
 
 def read_world(p):
-    header = p.range(MAP_HEADER, 0x1C)
-    layout, events, _, connections = struct.unpack("<IIII", header[:16])
-    w, h, _, _, prim, sec = struct.unpack("<iiIIII", p.range(layout, 24))
-    vw, vh, vptr = struct.unpack("<iiI", p.range(VMAP, 12))
-    if (vw, vh) != (w + 15, h + 14):
+    for attempt in range(8):  # mid map transition the header changes before the VMap is rebuilt
+        header = p.range(MAP_HEADER, 0x1C)
+        layout, events, _, connections = struct.unpack("<IIII", header[:16])
+        w, h, _, _, prim, sec = struct.unpack("<iiIIII", p.range(layout, 24))
+        vw, vh, vptr = struct.unpack("<iiI", p.range(VMAP, 12))
+        if (vw, vh) == (w + 15, h + 14):
+            break
+        p.step(10)
+    else:
         raise ValueError(f"VMap {vw}x{vh} doesn't match layout {w}x{h}")
     blocks = struct.unpack(f"<{vw * vh}H", p.range(vptr, vw * vh * 2))
     attrs = (struct.unpack(f"<{PRIMARY_METATILES}I", p.range(u32(p, prim + 0x14), PRIMARY_METATILES * 4)),
