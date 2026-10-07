@@ -12,7 +12,7 @@ Read `memory/objectives.md`, `memory/learnings.md` and any other file in `memory
 
 Unbound is deep. Play thoroughly, not as a speedrun:
 
-- **Explore.** Enter every building. Read every sign and **every notice board**, and store notice-board contents in `memory/notice_boards.md`: they matter.
+- **Explore.** Enter every building. Read every sign and **every notice board** **once**: `get_state` marks signs you've read (`read: true`). Store notice-board contents in `memory/notice_boards.md` (they matter) and anything useful from other signs in `memory/map_notes.md`, so you never need to read them again.
 - **NPCs: talk to each one once.** Record what they said in `memory/npcs.md` (map, position, who they are, what they said, and whether they want you back). `get_state` marks NPCs you've already talked to (`talked: true`). Only go back to someone who asked you to: a trade, a mission to report back on, "show me a certain Pokémon", a rematch. Don't re-talk to people just because they're there.
 - **Conversations.** Judge each one for usefulness and store the useful parts (hints, directions, mission leads, item locations) in memory.
 - **Missions.** Unbound has a mission (quest) log; the start menu's top banner shows the current one. Complete every mission as soon as you can.

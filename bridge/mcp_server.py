@@ -41,17 +41,17 @@ talked = set(json.load(open(TALKED))) if os.path.exists(TALKED) else set()
 
 
 def note_talk(s):
-    """A conversation just started: if the player faces an adjacent NPC, remember having talked to it."""
+    """Text just started: if the player faces an adjacent NPC or sign, remember it (talk/read once)."""
     w = W.read_world(p)
     dx, dy = bot.DIRS[s["facing"].upper()] if s.get("facing") else (0, 0)
     target = (w["player"][0] + dx, w["player"][1] + dy)
-    for n in w["npcs"]:
-        if (n["x"], n["y"]) == target:
-            key = f"{s['map']['group']},{s['map']['num']},{n['id']}"
-            if key not in talked:
-                talked.add(key)
-                with open(TALKED, "w") as f:
-                    json.dump(sorted(talked), f)
+    # NPCs are keyed by their ID (they move); signs by position.
+    keys = [f"{s['map']['group']},{s['map']['num']},{n['id']}" for n in w["npcs"] if (n["x"], n["y"]) == target]
+    keys += [f"{s['map']['group']},{s['map']['num']},sign@{x['x']},{x['y']}" for x in w["signs"] if (x["x"], x["y"]) == target]
+    if set(keys) - talked:
+        talked.update(keys)
+        with open(TALKED, "w") as f:
+            json.dump(sorted(talked), f)
 last_fingerprint, unchanged, watchdog_fired = None, 0, 0
 battle_seen = False
 
@@ -117,6 +117,7 @@ def view():
     out = {"viewport": W.viewport(w), **{k: w[k] for k in ("npcs", "warps", "signs", "connections")}}
     g, n = struct.unpack("<bb", p.range(p.read32(0x03005008) + 4, 2))  # SaveBlock1 location: group, num
     out["npcs"] = [{**x, "talked": f"{g},{n},{x['id']}" in talked} for x in w["npcs"]]
+    out["signs"] = [{**x, "read": f"{g},{n},sign@{x['x']},{x['y']}" in talked} for x in w["signs"]]
     # Exploration aid: doors and exits leading to maps never visited yet (#15's fog of war, map level).
     out["unvisited"] = [f"{x['to']} via {('warp at (%d, %d)' % (x['x'], x['y'])) if 'x' in x else x['direction'] + ' edge'}"
                         for x in w["warps"] + w["connections"] if tuple(x["to_map"]) not in tracker.seen_maps]
