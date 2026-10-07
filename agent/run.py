@@ -123,6 +123,8 @@ def main():
     ap.add_argument("--workspace", default=os.environ.get("UNBOUND_WORKSPACE", r"D:\ClaudeUnboundRuns\current"))
     ap.add_argument("--fresh", action="store_true")
     ap.add_argument("--bootstrap-from")
+    ap.add_argument("--new-session", action="store_true",
+                    help="start a new conversation (memory/ carries state) instead of --continue")
     ap.add_argument("--budget-usd", type=float, default=float("inf"), help="pause when API-equivalent cost passes this")
     ap.add_argument("--goal-badges", type=int, default=1)
     ap.add_argument("--max-chunks", type=int, default=1000)
@@ -132,7 +134,7 @@ def main():
     setup(a.workspace, a.fresh, a.bootstrap_from)
     usage_log = os.path.join(a.workspace, "usage.jsonl")
     spent = sum(json.loads(l).get("cost_usd") or 0 for l in open(usage_log, encoding="utf-8")) if os.path.exists(usage_log) else 0
-    first = a.fresh or not os.path.exists(usage_log)
+    first = a.fresh or a.new_session or not os.path.exists(usage_log)
     for n in range(a.max_chunks):
         print(f"chunk {n}: {'start' if first else 'continue'} (spent ${spent:.2f} API-equivalent)")
         res, secs = chunk(a.workspace, first)
