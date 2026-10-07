@@ -163,8 +163,12 @@ def t_press_buttons(a):
     out = []
     for key in a["buttons"]:
         key = key.upper()
+        if key == "WAIT":  # the agent asked for this: let a cutscene or animation play out
+            p.step(30)
+            out.append({"key": "WAIT", "frames": 30})
+            continue
         if key not in KEYS:
-            raise ValueError(f"unknown button {key}; use {KEYS}")
+            raise ValueError(f"unknown button {key}; use {KEYS + ['WAIT']}")
         t = press(p, key, a.get("hold_frames", 4), a.get("wait_frames", 16))
         out.append({"key": key, "moved": t["moved"], "changed": t["changed"]})
     return out
@@ -313,8 +317,9 @@ TOOLS = {
                   S({}), False),
     "get_screenshot": (t_get_screenshot, "Screenshot of the game screen (240x160).", S({}), False),
     "press_buttons": (t_press_buttons, "Press buttons in order. Each press reports whether you moved and what "
-                      "changed. A direction you aren't facing turns you first; press it again to step.",
-                      S({"buttons": {"type": "array", "items": {"type": "string", "enum": KEYS}},
+                      "changed. A direction you aren't facing turns you first; press it again to step. "
+                      "\"WAIT\" presses nothing for half a second (let a cutscene or animation play out).",
+                      S({"buttons": {"type": "array", "items": {"type": "string", "enum": KEYS + ["WAIT"]}},
                          "hold_frames": {"type": "integer"}, "wait_frames": {"type": "integer"}}, ["buttons"]), True),
     "advance_dialog": (t_advance_dialog, "Press A through dialog and return every text box seen. Stops at a "
                        "question so you can choose the answer, or when A stops advancing (a menu).",
