@@ -4,6 +4,7 @@
     python world.py full     # whole-map grid
 """
 import json
+import os
 import struct
 import sys
 
@@ -32,20 +33,41 @@ def u32(p, addr):
     return struct.unpack("<I", p.range(addr, 4))[0]
 
 
-def header_of(p, group, num):
+class RomFile:
+    """Reads ROM addresses from the cartridge file: map headers are static, so the map graph
+    doesn't need the emulator (through the socket it cost a frame per read, ~12 s per 64 maps)."""
+    def __init__(self, path):
+        with open(path, "rb") as f:
+            self.data = f.read()
+
+    def range(self, addr, n):
+        if not 0x08000000 <= addr < 0x08000000 + len(self.data):
+            raise ValueError(f"{addr:#x} is not a ROM address")
+        return self.data[addr - 0x08000000: addr - 0x08000000 + n]
+
+    def read8(self, addr):
+        return self.range(addr, 1)[0]
+
+
+ROM = RomFile(os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "run", "Unbound.gba"))
+
+
+def header_of(_p, group, num):
+    p = ROM
     """ROM map header address, via Unbound's XOR-obfuscated map-group table."""
     return u32(p, (u32(p, MAP_GROUPS + 4 * group) ^ MAP_GROUPS_KEY) + 4 * num)
 
 
-def map_name(p, group, num):
-    return NAMES["mapsecs"][str(p.read8(header_of(p, group, num) + 0x14))]
+def map_name(_p, group, num):
+    return NAMES["mapsecs"][str(ROM.read8(header_of(ROM, group, num) + 0x14))]
 
 
 _links = {}
 
 
-def map_links(p, group, num):
+def map_links(_p, group, num):
     """Maps reachable in one hop from (group, num): connections and warps, from the ROM header."""
+    p = ROM
     if (group, num) not in _links:
         header = header_of(p, group, num)
         events, _, connections = struct.unpack("<III", p.range(header + 4, 12))
