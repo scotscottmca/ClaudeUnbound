@@ -24,7 +24,7 @@ from state import TEXT_PRINTERS, get_state, press, raw
 HERE = os.path.dirname(os.path.abspath(__file__))
 RUN = os.path.normpath(os.path.join(HERE, "..", "run"))
 STATES = os.path.join(RUN, "states")
-LOG = os.path.join(RUN, "log.jsonl")
+LOG = os.environ.get("UNBOUND_LOG") or os.path.join(RUN, "log.jsonl")
 LEARN_EVERY = 40  # actions between self-learning checks (asked for every 25-50 steps)
 STALL_AFTER = 15  # actions with no change in map/position/mode/dialog
 TRAINER = 0x8  # gBattleTypeFlags bit
@@ -80,7 +80,7 @@ def notes(s):
 
 
 def log(entry):
-    os.makedirs(RUN, exist_ok=True)
+    os.makedirs(os.path.dirname(LOG), exist_ok=True)
     with open(LOG, "a", encoding="utf-8") as f:
         f.write(json.dumps({"t": round(time.time(), 1), **entry}, ensure_ascii=False) + "\n")
 

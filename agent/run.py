@@ -1,0 +1,148 @@
+"""Run the Claude Code player agent against mGBA until the goal (first badge by default).
+
+    python agent/run.py --fresh                 # new run from run/baseline.ss1
+    python agent/run.py                         # resume the current run
+    python agent/run.py --fresh --bootstrap-from D:/ClaudeUnboundRuns/gym1   # start with a previous run's memory (#22)
+
+Each chunk is one `claude -p` invocation (resumed with --continue). Per chunk it logs tokens, API-equivalent
+cost, model breakdown and the milestone to <workspace>/usage.jsonl (#13), pauses when the usage window
+is exhausted and resumes after the reset, and stops at the goal or the --budget-usd alarm.
+"""
+import argparse
+import json
+import os
+import re
+import shutil
+import subprocess
+import sys
+import time
+
+REPO = os.path.normpath(os.path.join(os.path.dirname(os.path.abspath(__file__)), ".."))
+sys.path.insert(0, os.path.join(REPO, "bridge"))
+import launch  # noqa: E402
+from probe import Probe  # noqa: E402
+from state import get_state  # noqa: E402
+
+CLAUDE = shutil.which("claude") or os.path.expanduser(r"~\.local\bin\claude.exe")
+MAIN_MODEL = "claude-sonnet-5"
+TOOLS = ["mcp__unbound", "Read", "Write", "Edit", "Glob", "Grep", "Task", "Agent"]
+MEMORY_SEED = {"objectives.md": "# Objectives\n\n- Goal: earn the first badge (Dresco Town gym).\n- Next: find out where I am and what the current mission says.\n",
+               "learnings.md": "# Learnings\n\n"}
+FIRST = "Start playing. Read memory/ first, then get_state."
+NEXT = ("Continue playing toward the goal. Keep going for a good stretch (~100 actions) before you stop; "
+        "update memory/objectives.md before you do. If you have earned the first badge, say GOAL REACHED.")
+
+
+def setup(ws, fresh, bootstrap):
+    os.makedirs(os.path.join(ws, "memory"), exist_ok=True)
+    shutil.copy(os.path.join(REPO, "agent", "CLAUDE.md"), os.path.join(ws, "CLAUDE.md"))
+    if bootstrap:
+        shutil.copytree(os.path.join(bootstrap, "memory"), os.path.join(ws, "memory"), dirs_exist_ok=True)
+    for name, text in MEMORY_SEED.items():
+        path = os.path.join(ws, "memory", name)
+        if not os.path.exists(path):
+            with open(path, "w", encoding="utf-8") as f:
+                f.write(text)
+    with open(os.path.join(ws, "mcp.json"), "w", encoding="utf-8") as f:
+        json.dump({"mcpServers": {"unbound": {"command": sys.executable,
+                                              "args": [os.path.join(REPO, "bridge", "mcp_server.py")],
+                                              "env": {"UNBOUND_LOG": os.path.join(ws, "log.jsonl")}}}}, f)
+    if fresh:
+        subprocess.run(["taskkill", "/IM", "mGBA.exe", "/F"], capture_output=True)
+        time.sleep(2)
+        sav = os.path.join(REPO, "run", "Unbound.sav")
+        if os.path.exists(sav):
+            os.replace(sav, sav + f".{int(time.time())}.bak")
+        launch.launch(os.path.join(REPO, "run", "baseline.ss1"))
+    else:
+        launch.launch()
+
+
+def chunk(ws, first):
+    args = [CLAUDE, "-p", FIRST if first else NEXT, "--model", MAIN_MODEL,
+            "--mcp-config", "mcp.json", "--strict-mcp-config",
+            "--agents", open(os.path.join(REPO, "agent", "agents.json"), encoding="utf-8").read(),
+            "--allowedTools", *TOOLS, "--output-format", "stream-json", "--verbose"]
+    if not first:
+        args.insert(3, "--continue")
+    os.makedirs(os.path.join(ws, "transcripts"), exist_ok=True)
+    started = time.time()
+    result = None
+    with open(os.path.join(ws, "transcripts", f"{int(started)}.jsonl"), "w", encoding="utf-8") as out:
+        proc = subprocess.Popen(args, cwd=ws, stdout=subprocess.PIPE, stdin=subprocess.DEVNULL,
+                                text=True, encoding="utf-8", errors="replace")
+        for line in proc.stdout:
+            out.write(line)
+            try:
+                ev = json.loads(line)
+            except json.JSONDecodeError:
+                continue
+            if ev.get("type") == "assistant":
+                for block in ev["message"].get("content", []):
+                    if block.get("type") == "text" and block["text"].strip():
+                        print("  agent:", block["text"].strip()[:300])
+                    elif block.get("type") == "tool_use":
+                        print("  tool:", block["name"].replace("mcp__unbound__", ""), json.dumps(block["input"])[:120])
+            elif ev.get("type") == "result":
+                result = ev
+        proc.wait()
+    return result or {"is_error": True, "result": f"no result (exit {proc.returncode})"}, time.time() - started
+
+
+def milestone():
+    try:
+        s = get_state(Probe())
+        return {"badges": s["badges"], "map": s["map"]["name"], "pos": s["pos"], "party": [m["hp"] for m in s["party"]]}
+    except Exception as e:  # the emulator may be restarting
+        return {"error": repr(e)}
+
+
+def limit_wait(text):
+    """Seconds to wait if the usage window is exhausted, else None."""
+    if "limit" not in text.lower():
+        return None
+    m = re.search(r"\|(\d{10})", text)  # some versions print "...limit reached|<epoch>"
+    return max(60, int(m.group(1)) - time.time() + 60) if m else 15 * 60
+
+
+def main():
+    ap = argparse.ArgumentParser()
+    ap.add_argument("--workspace", default=os.environ.get("UNBOUND_WORKSPACE", r"D:\ClaudeUnboundRuns\current"))
+    ap.add_argument("--fresh", action="store_true")
+    ap.add_argument("--bootstrap-from")
+    ap.add_argument("--budget-usd", type=float, default=float("inf"), help="pause when API-equivalent cost passes this")
+    ap.add_argument("--goal-badges", type=int, default=1)
+    ap.add_argument("--max-chunks", type=int, default=1000)
+    a = ap.parse_args()
+    if a.fresh and os.path.exists(os.path.join(a.workspace, "transcripts")):
+        sys.exit(f"{a.workspace} already has a run; pick a new --workspace for a fresh run")
+    setup(a.workspace, a.fresh, a.bootstrap_from)
+    usage_log = os.path.join(a.workspace, "usage.jsonl")
+    spent = sum(json.loads(l).get("cost_usd", 0) for l in open(usage_log, encoding="utf-8")) if os.path.exists(usage_log) else 0
+    first = a.fresh or not os.path.exists(usage_log)
+    for n in range(a.max_chunks):
+        print(f"chunk {n}: {'start' if first else 'continue'} (spent ${spent:.2f} API-equivalent)")
+        res, secs = chunk(a.workspace, first)
+        text = str(res.get("result", ""))
+        wait = limit_wait(text) if res.get("is_error") else None
+        entry = {"t": round(time.time()), "chunk": n, "secs": round(secs), "turns": res.get("num_turns"),
+                 "is_error": res.get("is_error"), "usage": res.get("usage"), "cost_usd": res.get("total_cost_usd", 0),
+                 "models": res.get("modelUsage"), "milestone": milestone(), "note": text[-300:]}
+        with open(usage_log, "a", encoding="utf-8") as f:
+            f.write(json.dumps(entry) + "\n")
+        spent += entry["cost_usd"] or 0
+        if wait:
+            print(f"usage window exhausted; waiting {wait / 60:.0f} min")
+            time.sleep(wait)
+            continue
+        first = False
+        if entry["milestone"].get("badges", 0) >= a.goal_badges or "GOAL REACHED" in text:
+            print("goal reached:", entry["milestone"])
+            return
+        if spent > a.budget_usd:
+            sys.exit(f"budget alarm: ${spent:.2f} API-equivalent > ${a.budget_usd}")
+    print("max chunks reached")
+
+
+if __name__ == "__main__":
+    main()
