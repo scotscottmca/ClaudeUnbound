@@ -18,6 +18,7 @@ import traceback
 
 import bot
 import milestones
+import wiki
 import world as W
 from probe import Probe
 from state import TEXT_PRINTERS, get_state, press, raw
@@ -223,6 +224,15 @@ def t_read_memory(a):
     return {"addr": hex(a["addr"]), "hex": p.range(a["addr"], min(a["length"], 0x1000)).hex(" ")}
 
 
+def t_wiki_search(a):
+    return wiki.search(a["query"], a.get("n", 5))
+
+
+def t_wiki_read(a):
+    text = wiki.read(a["page"])["text"]
+    return {"page": a["page"], "text": text[:12000] + (" [truncated]" if len(text) > 12000 else "")}
+
+
 S = lambda props, req=(): {"type": "object", "properties": props, "required": list(req)}
 TOOLS = {
     "get_state": (t_get_state, "Current game state: mode (overworld/battle/dialog/other), map, position, "
@@ -253,6 +263,12 @@ TOOLS = {
                    S({"name": {"type": "string"}}, ["name"]), False),
     "load_state": (t_load_state, "Load a savestate saved with save_state.",
                    S({"name": {"type": "string"}}, ["name"]), True),
+    "wiki_search": (t_wiki_search, "Search the local unboundwiki copy. It covers only Pokémon (where to find "
+                    "them, types, abilities, evolutions, moves), items and locations (towns, routes, their items, "
+                    "trainers, wild Pokémon). No walkthrough or missions: work those out yourself.",
+                    S({"query": {"type": "string"}, "n": {"type": "integer"}}, ["query"]), False),
+    "wiki_read": (t_wiki_read, "Read a wiki page found with wiki_search (pass its url).",
+                  S({"page": {"type": "string"}}, ["page"]), False),
     "read_memory": (t_read_memory, "Read up to 4096 bytes of GBA memory (hex). For discovering RAM by "
                     "diffing: read, act, read again. Use docs/addresses.md knowledge sparingly.",
                     S({"addr": {"type": "integer"}, "length": {"type": "integer"}}, ["addr", "length"]), False),

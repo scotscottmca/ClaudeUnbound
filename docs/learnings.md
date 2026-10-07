@@ -44,6 +44,8 @@ Failures, their root causes, and the rule each one taught. Read this before buil
 | 2026-10-07 | Killing the runner by command-line match also killed my own shell | The match text (`agent/run.py`) appeared in the killing command's own command line | Match processes by PID or by an exact executable plus argument, never by a substring the killer itself contains |
 | 2026-10-07 | Changing the runner's model needed a restart that orphaned the running chunk | The model was a constant loaded at start | Settings that may change mid-run are re-read each cycle (`model.txt`) |
 
+| 2026-10-07 | Two Python edits shipped real line breaks where `\n` escapes were meant (syntax errors) | Code containing backslash escapes was written through a shell heredoc that mangled them | Write code with escapes using the editor tool, not heredocs; run a syntax check after every scripted edit |
+
 ## Signals found along the way
 
 - Battle: player controller `gBattlerControllerFuncs[0]` (0x03004FE0) = 0x0802E439 at the action menu, 0x0802EA11 at the move menu. Cursors: action 0x02023FF8 (0 Fight, 1 Cube, 2 Pokémon, 3 Run), move 0x02023FFC.

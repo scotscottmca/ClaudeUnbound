@@ -150,12 +150,26 @@ def crawl():
         print("failed:", u)
 
 
+EXCLUDED_HEADINGS = ("missions",)  # user decision: no mission content, even on allowed pages
+
+
+def strip_excluded(text):
+    """Drop '## Missions'-style sections (heading through the next '## ' heading)."""
+    out, skip = [], False
+    for line in text.splitlines():
+        if line.startswith("## "):
+            skip = line[3:].strip().lower().startswith(EXCLUDED_HEADINGS)
+        if not skip:
+            out.append(line)
+    return "\n".join(out)
+
+
 def index():
     DB.unlink(missing_ok=True)
     db = sqlite3.connect(DB)
     db.execute("CREATE VIRTUAL TABLE pages USING fts5(title, section UNINDEXED, url UNINDEXED, text, tokenize='unicode61 remove_diacritics 2')")
     rows = [json.loads(f.read_text(encoding="utf-8")) for f in PAGES.glob("*.json")]
-    rows = [r for r in rows if r["section"] in ALLOWED_SECTIONS]
+    rows = [{**r, "text": strip_excluded(r["text"])} for r in rows if r["section"] in ALLOWED_SECTIONS]
     db.executemany("INSERT INTO pages VALUES (:title, :section, :url, :text)", rows)
     db.commit()
     print(f"indexed {len(rows)} pages into {DB}")
@@ -187,10 +201,13 @@ def read(url_or_slug):
     f = PAGES / f"{slug(s)}.json"
     if not f.exists():
         raise KeyError(f"no cached page for {url_or_slug!r}")
-    return json.loads(f.read_text(encoding="utf-8"))
+    page = json.loads(f.read_text(encoding="utf-8"))
+    return {**page, "text": strip_excluded(page["text"])}
 
 
 def _selftest():
+    assert strip_excluded("## Trainers\nA\n## Missions\nsecret\n### Sub\nmore\n## Vendors\nB") == \
+        "## Trainers\nA\n## Vendors\nB"
     html = ('<nav>menu</nav><h1>Snorunt</h1><div class="text-content"><h2>Abilities</h2><p>Inner&nbsp;Focus</p>'
             '<div class="table-wrap"><table><tr><th>Lv</th><th>Move</th></tr><tr><td>1</td><td>Powder <b>Snow</b></td></tr></table></div>'
             '<script>x()</script></div><footer>foot</footer>')
