@@ -144,7 +144,8 @@ def read_world(p):
     for i in range(n_bg):
         x, y, _, kind = struct.unpack("<HHBB", p.range(bg_ptr + 12 * i, 6))
         if kind < 5:  # 7 = hidden item, 8 = secret base
-            signs.append({"x": x, "y": y})
+            # 0: readable from any side; 1-4: only while facing up/down/right/left (most signs: up).
+            signs.append({"x": x, "y": y, "read_facing": [None, "up", "down", "right", "left"][kind]})
     conns = []
     if connections:
         count, ptr = struct.unpack("<iI", p.range(connections, 8))

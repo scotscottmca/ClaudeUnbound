@@ -48,10 +48,19 @@ Failures, their root causes, and the rule each one taught. Read this before buil
 
 | 2026-10-07 | The agent concluded "travel_to keeps looping" and left Bellin Town, its mission's destination | travel_to silently re-routed around a story-blocked cave across half the region (300 steps), and my Phase 1 bot had "reached" Bellin by crossing a map edge that is a dead end (avalanche snow) | Deterministic tools hand surprises back to the model with an explanation; an exit test must reach a place you can actually use, not just a map ID |
 
+| 2026-10-07 | The emulator closed and about 40 minutes of play were lost (back to the last in-game save) | The bridge's autosave existed since #5 but the runner never switched it on | Recovery paths are part of the feature: the runner enables autosave on every start and resumes from the newest one |
+| 2026-10-07 | Smooth-walk strides overshot (6 tiles asked, 8 walked) | Assumed vanilla's 16 frames a tile; Unbound walks 8 (and a turn costs 8) | 1: measure timings on Unbound before using them |
+| 2026-10-07 | Sign reads came back empty even though A was pressed | In FireRed walking into a sign reads it: the turn toward it opened the sign and the following A closed it | After any input that might start text, look before pressing again |
+| 2026-10-07 | A message waiting for A read as `other`, so advance_dialog skipped it | A finished message has no active text printer; the script is parked in a wait-for-button native (sScriptContext1 0x03000EB0, pointers 0x0806951D / 0x08A0F275) | 1 |
+| 2026-10-07 | travel_to kept walking into a story gate ("Claude! What are you doing?"), and the user spotted the loop before I did, a third time | The bot path pressed B through the gate's script and retried; my test ran unguarded with a 500 s timeout | Tools stop when a script takes over; my own test scripts are autonomous loops too: cap steps and time, and watch them |
+| 2026-10-07 | Committed code whose test hadn't run (twice), and an edit I thought applied had been refused | Chained commit after a test that failed; the editor refuses unread files | Commit only behind a passing test (`test && commit`); confirm every edit result |
+
 ## Signals found along the way
 
 - Battle: player controller `gBattlerControllerFuncs[0]` (0x03004FE0) = 0x0802E439 at the action menu, 0x0802EA11 at the move menu. Cursors: action 0x02023FF8 (0 Fight, 1 Cube, 2 Pokémon, 3 Run), move 0x02023FFC.
 - In-battle party screen ("Choose a Pokémon"): callback2 0x0811EBA1.
 - Unbound's battle menu is Fight / Cube / Pokémon / Run.
 - Wild-encounter screen wipe: callback2 0x080565A9.
+- Messages: printers are per window (shops use their own); a finished message waiting for A shows as script mode 2 parked in a wait-for-button native.
+- Movement: 8 frames a tile while the key is held, plus 8 to turn first. Walking into a sign reads it.
 - Story gates are often invisible objects: active object events with no visible sprite (e.g. graphics 33 on Icicle Cave's mouth). The grid shows them as `N`.

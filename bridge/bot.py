@@ -23,6 +23,7 @@ EDGE = {"north": "UP", "south": "DOWN", "west": "LEFT", "east": "RIGHT"}
 LEDGE_DIR = {0x38: "RIGHT", 0x39: "LEFT", 0x3A: "UP", 0x3B: "DOWN"}
 # Warp behavior -> keys that trigger it from on top (arrow warps 0x62-0x65, door 0x69).
 WARP_KEYS = {0x62: ["RIGHT"], 0x63: ["LEFT"], 0x64: ["UP"], 0x65: ["DOWN"], 0x69: ["UP", "DOWN"]}
+TILE_FRAMES = 8  # Unbound walks a tile in 8 frames when the key is held (measured)
 SLIDE_ICE = 0x23  # slides you; thin (0x26) and cracked (0x27) ice are puzzles, still avoided
 AVOID = W.WATER | (W.ICE - {SLIDE_ICE}) | W.FORCED | {0x13}
 MAX_STEPS = 600
@@ -84,16 +85,17 @@ def plan(w, goals, blocked, grass_cost=8):
 
 
 def stride(p, path, facing, max_tiles=8):
-    """Walk the straight run at the start of PATH in one held press: smooth, ~16 frames a tile,
-    instead of a tap and a re-plan per tile. Returns tiles moved along the path, or -1 if the
-    player ended up off the plan (a ledge jump, an ice slide, forced movement) and should re-plan."""
+    """Walk the straight run at the start of PATH in one held press, instead of a tap and a re-plan
+    per tile. Returns tiles moved along the path, or -1 if the player ended up off the plan (a ledge
+    jump, an ice slide, forced movement) and should re-plan."""
     key, n = path[0], 1
     while n < min(len(path), max_tiles) and path[n] == key:
         n += 1
     sb1 = p.read32(SB1_PTR)
     start = p.range(sb1, 6)
-    # Release just before the last step would repeat; a turn first costs a few extra frames.
-    p.press(key, 16 * n - 4 + (0 if facing == key.lower() else 8))
+    # Measured on Unbound: 8 frames a tile (vanilla is 16) and 8 more to turn first. Release
+    # 4 frames before the next step would start.
+    p.press(key, TILE_FRAMES * n - 4 + (0 if facing == key.lower() else TILE_FRAMES))
     pos = p.range(sb1, 6)
     for _ in range(40):  # let the last step (or a slide or jump) finish
         p.step(6)
@@ -203,6 +205,10 @@ def go(p, target, reroute=True):
             battle(p)  # keep the plan: a battle doesn't change the map, and re-planning with
             continue    # post-battle HP flipped the grass cost and sent the bot back the way it came
         if r["mode"] == "dialog" or (r["mode"] == "other" and r["cb2"] == hex(CB2_OVERWORLD)):
+            if not reroute:  # the agent's tools: a script took over (story gate, NPC, event); its call
+                raise SystemExit(f"stopped: a script or dialog started at {s['map']['name']} {s['pos']} "
+                                 "(a story event, NPC or sign). Read it (advance_dialog) and decide; walking "
+                                 "the same way again will likely trigger it again.")
             print(f"{step}: {r['mode']} on the overworld -> B")
             press(p, "B")  # dialog box, start menu or a script lock: B closes or advances it
             continue

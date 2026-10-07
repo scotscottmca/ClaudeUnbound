@@ -10,6 +10,7 @@ cost, model breakdown and the milestone to <workspace>/usage.jsonl (#13), pauses
 is exhausted and resumes after the reset, and stops at the goal or the --budget-usd alarm.
 """
 import argparse
+import glob
 import json
 import os
 import re
@@ -55,8 +56,15 @@ def setup(ws, fresh, bootstrap):
         if os.path.exists(sav):
             os.replace(sav, sav + f".{int(time.time())}.bak")
         launch.launch(os.path.join(REPO, "run", "baseline.ss1"))
-    else:
-        launch.launch()
+    elif not launch.serving():
+        # The emulator went down: resume from the newest autosave, not the last in-game save
+        # (losing 40 minutes of play to a closed emulator is how this was learned).
+        saves = sorted(glob.glob(os.path.join(ws, "autosaves", "*.ss1")), key=os.path.getmtime)
+        launch.launch(saves[-1] if saves else None)
+        print("relaunched mGBA from", saves[-1] if saves else "the in-game save")
+    # Rolling savestate every 5 minutes of game time, last 12 kept (bridge-side, runs between chunks too).
+    os.makedirs(os.path.join(ws, "autosaves"), exist_ok=True)
+    Probe().autosave(os.path.join(ws, "autosaves"), 18000, 12)
 
 
 def chunk(ws, first):
