@@ -20,6 +20,7 @@ import traceback
 
 import bot
 import milestones
+import moves
 import wiki
 import world as W
 from probe import Probe
@@ -141,7 +142,13 @@ def view():
 # --- tools ---------------------------------------------------------------------------------
 
 def t_get_state(_):
-    return {**get_state(p), "map_view": view()}
+    s = get_state(p)
+    if s.get("battle"):
+        try:
+            s["battle"]["matchups"] = moves.matchups(s)
+        except Exception as e:  # hints only: never break get_state
+            s["battle"]["matchups"] = f"unavailable: {e!r}"
+    return {**s, "map_view": view()}
 
 
 def t_get_screenshot(_):
