@@ -311,14 +311,22 @@ def t_travel_to(a):
 
 def t_save_state(a):
     os.makedirs(STATES, exist_ok=True)
-    p.save(os.path.join(STATES, a["name"] + ".ss1"))
-    return {"saved": a["name"]}
+    name = a.get("name") or time.strftime("save-%Y%m%d-%H%M%S")  # the default tier forgets the name
+    p.save(os.path.join(STATES, name + ".ss1"))
+    return {"saved": name}
 
 
 def t_load_state(a):
-    p.load(os.path.join(STATES, a["name"] + ".ss1"))
+    name = a.get("name")
+    if not name:  # newest one
+        saves = sorted((f for f in os.listdir(STATES) if f.endswith(".ss1")),
+                       key=lambda f: os.path.getmtime(os.path.join(STATES, f))) if os.path.isdir(STATES) else []
+        if not saves:
+            raise ValueError("no savestates yet")
+        name = saves[-1][:-4]
+    p.load(os.path.join(STATES, name + ".ss1"))
     p.step(2)
-    return {"loaded": a["name"]}
+    return {"loaded": name}
 
 
 def t_fight(a):
@@ -389,9 +397,9 @@ TOOLS = {
                   S({"map": {"type": "string"}, "on_wild_battle": {"type": "string", "enum": ["stop", "flee"]},
                      "max_steps": {"type": "integer"}}, ["map"]), True),
     "save_state": (t_save_state, "Save an emulator savestate under a name (for rollback).",
-                   S({"name": {"type": "string"}}, ["name"]), False),
-    "load_state": (t_load_state, "Load a savestate saved with save_state.",
-                   S({"name": {"type": "string"}}, ["name"]), True),
+                   S({"name": {"type": "string"}}), False),
+    "load_state": (t_load_state, "Load a savestate saved with save_state (no name: the newest).",
+                   S({"name": {"type": "string"}}), True),
     "wiki_search": (t_wiki_search, "Search the local unboundwiki copy. It covers only Pokémon (where to find "
                     "them, types, abilities, evolutions, moves), items and locations (towns, routes, their items, "
                     "trainers, wild Pokémon). No walkthrough or missions: work those out yourself.",
