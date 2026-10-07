@@ -168,9 +168,11 @@ def get_state(p):
 def _snapshot(p):
     """Small state that changes on anything meaningful. Whole-screen diffs don't work:
     weather and animated tiles change the screen every frame."""
-    r, s = raw(p), get_state(p)
+    r = raw(p)  # not get_state(): party/bag/battle reads made every press take ~1 s
+    x, y, group, num = struct.unpack("<hhbb", p.range(p.read32(SB1_PTR), 6))
+    player = p.range(OBJECT_EVENTS, 0x24)  # the player is object event 0 (gPlayerAvatar.objectEventId)
     pr = r["printer"]
-    return {"map": (s["map"]["group"], s["map"]["num"]), "pos": tuple(s["pos"]), "facing": s.get("facing"),
+    return {"map": (group, num), "pos": (x, y), "facing": FACING.get(player[0x18] & 0xF),
             "mode": r["mode"], "cb2": r["cb2"], "locked": r["locked"], "printer": (pr[0x1B], pr[0x1C], pr[0:4].hex())}
 
 
