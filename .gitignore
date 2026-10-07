@@ -4,3 +4,4 @@
 *.ups
 *.bps
 __pycache__/
+wiki/
