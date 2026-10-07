@@ -31,6 +31,8 @@ HERE = os.path.dirname(os.path.abspath(__file__))
 RUN = os.path.normpath(os.path.join(HERE, "..", "run"))
 STATES = os.path.join(RUN, "states")
 LOG = os.environ.get("UNBOUND_LOG") or os.path.join(RUN, "log.jsonl")
+VERIFY_EVERY = 20  # actions between Sonnet verification checks
+IRREVERSIBLE = ("forget", "forgot", "delete", "release", "toss", "throw away", "discard", "give up", "overwrite", "stop learning")
 LEARN_EVERY = 40  # actions between self-learning checks (asked for every 25-50 steps)
 STALL_AFTER = 15  # actions with no change in map/position/mode/dialog
 TRAINER = 0x8  # gBattleTypeFlags bit
@@ -97,6 +99,13 @@ def notes(s):
                        "this place, take a screenshot, and pick a genuinely different route or goal."
                        + (" ESCALATE to the expert subagent: the watchdog has fired repeatedly."
                           if watchdog_fired >= 2 else ""))
+    if steps and steps % VERIFY_EVERY == 0 and steps % LEARN_EVERY:
+        out.append(f"VERIFY (action {steps}): ask the verifier subagent to check the last stretch against the game "
+                   "state: what you did, what you believe, what you plan next. Follow its corrections.")
+    text = (s.get("dialog") or "").lower()
+    if s["mode"] == "dialog" and text.rstrip().endswith("?") and any(w in text for w in IRREVERSIBLE):
+        out.append("VERIFY before answering: this looks irreversible. Ask the verifier subagent to approve your "
+                   "answer first.")
     if steps and steps % LEARN_EVERY == 0:
         out.append(f"LEARNING CHECK (action {steps}): review what happened since the last check. Record "
                    "new facts in memory/, add a learnings.md entry for anything that failed or surprised "
