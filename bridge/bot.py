@@ -20,6 +20,8 @@ import world as W
 DIRS = {"UP": (0, -1), "DOWN": (0, 1), "LEFT": (-1, 0), "RIGHT": (1, 0)}
 EDGE = {"north": "UP", "south": "DOWN", "west": "LEFT", "east": "RIGHT"}
 LEDGE_DIR = {0x38: "RIGHT", 0x39: "LEFT", 0x3A: "UP", 0x3B: "DOWN"}
+# Warp behavior -> keys that trigger it from on top (arrow warps 0x62-0x65, door 0x69).
+WARP_KEYS = {0x62: ["RIGHT"], 0x63: ["LEFT"], 0x64: ["UP"], 0x65: ["DOWN"], 0x69: ["UP", "DOWN"]}
 SLIDE_ICE = 0x23  # slides you; thin (0x26) and cracked (0x27) ice are puzzles, still avoided
 AVOID = W.WATER | (W.ICE - {SLIDE_ICE}) | W.FORCED | {0x13}
 MAX_STEPS = 600
@@ -140,7 +142,7 @@ def battle(p):
 
 def go(p, target, reroute=True):
     blocked, last, still, unknown, path, recent = set(), None, 0, 0, [], collections.deque(maxlen=20)
-    hops, last_next, closed = [], None, set()
+    hops, last_next, closed, warp_try = [], None, set(), 0
     for step in range(MAX_STEPS):
         s = get_state(p)
         where = (s["map"]["name"], tuple(s["pos"]), s["mode"], s.get("dialog"))
@@ -203,7 +205,14 @@ def go(p, target, reroute=True):
             print(f"{step}: plan {len(path)} steps: {''.join(k[0] for k in path)}")
         key = path[0] if path else final
         if key is None:
-            stop(p, "standing on the warp but it didn't trigger")
+            # On a warp that didn't fire: warps trigger when you walk *into* them. Arrow warps say which
+            # way; building doors go UP; exit mats and the rest usually DOWN.
+            beh = w["tile"](*w["player"])[0]
+            tries = WARP_KEYS.get(beh, ["DOWN", "UP", "LEFT", "RIGHT"])
+            key = tries[warp_try % len(tries)]
+            warp_try += 1
+            if warp_try > 4:
+                stop(p, "standing on the warp but it didn't trigger in any direction")
         t = press(p, key)
         print(f"{step}: {s['map']['name']} {w['player']} {key} -> {t['after']['pos']} {t['changed']}")
         if t["moved"] and path:
