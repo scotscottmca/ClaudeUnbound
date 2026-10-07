@@ -19,11 +19,16 @@ How Claude should play Unbound. Unbound is very in-depth, so the goal is a thoro
 
 ## Pokémon
 
-- Rename every Pokémon captured.
+- Rename every Pokémon captured. Names are entirely Claude's choice.
 
 ## Quests
 
 - Unbound has a mission (quest) system. Complete every mission as soon as it becomes possible.
+
+## Reference material
+
+- Claude may consult the community wiki ([unboundwiki.com](https://unboundwiki.com/)) for anything: walkthrough, trainer teams, puzzle solutions, missions, item locations. This settles the wiki-access question the research report left open.
+- The wiki is indexed into a local searchable corpus that Claude queries on demand. It is not loaded into memory wholesale. Memory holds what Claude learns while playing, and looks things up in the wiki when it needs them.
 
 ## Impact on the plan
 
