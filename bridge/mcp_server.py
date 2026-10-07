@@ -21,7 +21,7 @@ import milestones
 import wiki
 import world as W
 from probe import Probe
-from state import TEXT_PRINTERS, get_state, press, raw
+from state import get_state, press, raw
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 RUN = os.path.normpath(os.path.join(HERE, "..", "run"))
@@ -137,10 +137,10 @@ def t_advance_dialog(a):
             seen.append(text)
         if text.rstrip().endswith("?") and seen.count(text) == 1 and len(seen) > 1 and a.get("stop_on_question", True):
             break  # a question: the agent should choose the answer itself
-        before = p.range(TEXT_PRINTERS, 4)
+        before = raw(p)["printer"][0:4]
         p.press("A", 4)
         p.step(20)
-        if seen.count(text) > 3 and p.range(TEXT_PRINTERS, 4) == before:
+        if seen.count(text) > 3 and raw(p)["printer"][0:4] == before:
             break  # A isn't advancing: probably a Yes/No or choice menu
     return {"boxes": seen, "now": raw(p)["mode"]}
 

@@ -18,7 +18,8 @@ PLAYER_PARTY_COUNT = 0x02024029
 PLAYER_PARTY = 0x02024284  # 6 x 100, unencrypted on CFRU
 BATTLE_TYPE_FLAGS = 0x02022B4C
 BATTLE_MONS = 0x02023BE4  # 4 x 0x58
-TEXT_PRINTERS = 0x02020034  # 0x24 each
+TEXT_PRINTERS = 0x02020034  # 0x24 each, one per window
+NUM_TEXT_PRINTERS = 32
 STRING_VAR4 = 0x02021D18
 DISPLAYED_STRING_BATTLE = 0x0202298C
 LOCK_FIELD_CONTROLS = 0x03000F9C  # u8, 1 while a script/menu/dialog holds the player
@@ -93,9 +94,14 @@ def current_text(p, printer):
 def raw(p):
     """Fields the mode and press trace are built from."""
     cb1, cb2 = struct.unpack("<II", p.range(G_MAIN, 8))
-    printer = p.range(TEXT_PRINTERS, 0x24)
+    # One printer per window: NPC text uses window 0, but shops and other menus print in their own
+    # windows (#57). The first active printer is the text on screen; printer 0 if none is active.
+    printers = p.range(TEXT_PRINTERS, NUM_TEXT_PRINTERS * 0x24)
+    active = [i for i in range(NUM_TEXT_PRINTERS) if printers[i * 0x24 + 0x1B]]
+    i = active[0] if active else 0
+    printer = printers[i * 0x24:(i + 1) * 0x24]
     locked = p.read8(LOCK_FIELD_CONTROLS)
-    mode = ("battle" if cb2 == CB2_BATTLE else "dialog" if printer[0x1B]
+    mode = ("battle" if cb2 == CB2_BATTLE else "dialog" if active
             else "overworld" if cb2 == CB2_OVERWORLD and not locked else "other")
     return {"cb2": hex(cb2), "locked": locked, "printer": printer, "mode": mode}
 
