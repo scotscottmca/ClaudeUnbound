@@ -123,7 +123,7 @@ def main():
         sys.exit(f"{a.workspace} already has a run; pick a new --workspace for a fresh run")
     setup(a.workspace, a.fresh, a.bootstrap_from)
     usage_log = os.path.join(a.workspace, "usage.jsonl")
-    spent = sum(json.loads(l).get("cost_usd", 0) for l in open(usage_log, encoding="utf-8")) if os.path.exists(usage_log) else 0
+    spent = sum(json.loads(l).get("cost_usd") or 0 for l in open(usage_log, encoding="utf-8")) if os.path.exists(usage_log) else 0
     first = a.fresh or not os.path.exists(usage_log)
     for n in range(a.max_chunks):
         print(f"chunk {n}: {'start' if first else 'continue'} (spent ${spent:.2f} API-equivalent)")
