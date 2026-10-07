@@ -338,8 +338,11 @@ def t_wiki_search(a):
 
 
 def t_wiki_read(a):
-    text = wiki.read(a["page"])["text"]
-    return {"page": a["page"], "text": text[:12000] + (" [truncated]" if len(text) > 12000 else "")}
+    page = a.get("page") or a.get("url") or a.get("slug")  # the agent reaches for "url" (search returns urls)
+    if not page:
+        raise ValueError("pass the page's url (from wiki_search) as 'page'")
+    text = wiki.read(page)["text"]
+    return {"page": page, "text": text[:12000] + (" [truncated]" if len(text) > 12000 else "")}
 
 
 S = lambda props, req=(): {"type": "object", "properties": props, "required": list(req)}
@@ -380,7 +383,7 @@ TOOLS = {
                     "trainers, wild Pokémon). No walkthrough or missions: work those out yourself.",
                     S({"query": {"type": "string"}, "n": {"type": "integer"}}, ["query"]), False),
     "wiki_read": (t_wiki_read, "Read a wiki page found with wiki_search (pass its url).",
-                  S({"page": {"type": "string"}}, ["page"]), False),
+                  S({"page": {"type": "string", "description": "the url from wiki_search"}}, ["page"]), False),
     "fight": (t_fight, "In battle: use a move by name (e.g. 'Water Gun'). Opens Fight, picks the move, "
               "confirms (default target in double battles), and waits for your next turn. Stops and says so "
               "when text or a prompt (level-up, learning a move) needs you.",
