@@ -155,6 +155,8 @@ def read_world(p):
         count, ptr = struct.unpack("<iI", p.range(connections, 8))
         for i in range(count):
             d, _, _, _, offset, group, num = struct.unpack("<BBBBiBB", p.range(ptr + 12 * i, 10))
+            if d not in CONNECTION:  # Dresco Gym lists a direction-0 entry: not a walkable connection
+                continue
             conns.append({"direction": CONNECTION[d], "to": map_name(p, group, num), "to_map": [group, num],
                           "offset": offset})
 
