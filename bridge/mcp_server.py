@@ -114,7 +114,9 @@ def notes(s):
             elif gap >= -2:
                 out.append("ESCALATE to the strategist subagent: trainer battle against a close-level foe. "
                            "Ask it for a plan, then execute it.")
-    battle_seen = in_battle
+    # One escalation per battle: switching Pokemon opens the party screen (not the battle callback),
+    # which used to reset this and re-fire the note several times in one fight.
+    battle_seen = True if in_battle else (False if s["mode"] == "overworld" else battle_seen)
     return out
 
 
