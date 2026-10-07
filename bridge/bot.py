@@ -11,15 +11,19 @@ import collections
 import heapq
 import json
 import os
+import struct
 import sys
 
 from probe import Probe
-from state import CB2_OVERWORLD, get_state, press, raw
+from state import CB2_OVERWORLD, SB1_PTR, get_state, press, raw
 import world as W
 
 DIRS = {"UP": (0, -1), "DOWN": (0, 1), "LEFT": (-1, 0), "RIGHT": (1, 0)}
 EDGE = {"north": "UP", "south": "DOWN", "west": "LEFT", "east": "RIGHT"}
 LEDGE_DIR = {0x38: "RIGHT", 0x39: "LEFT", 0x3A: "UP", 0x3B: "DOWN"}
+# Warp behavior -> keys that trigger it from on top (arrow warps 0x62-0x65, door 0x69).
+WARP_KEYS = {0x62: ["RIGHT"], 0x63: ["LEFT"], 0x64: ["UP"], 0x65: ["DOWN"], 0x69: ["UP", "DOWN"]}
+TILE_FRAMES = 8  # Unbound walks a tile in 8 frames when the key is held (measured)
 SLIDE_ICE = 0x23  # slides you; thin (0x26) and cracked (0x27) ice are puzzles, still avoided
 AVOID = W.WATER | (W.ICE - {SLIDE_ICE}) | W.FORCED | {0x13}
 MAX_STEPS = 600
@@ -31,18 +35,20 @@ def plan(w, goals, blocked, grass_cost=8):
     px, py = w["player"]
     npcs = {(n["x"], n["y"]) for n in w["npcs"]}
     occupied = {t for t in npcs if abs(t[0] - px) + abs(t[1] - py) <= 1} | blocked
-    start = (*w["player"], w["elevation"])
+    # State carries the last direction so a small turn penalty picks straight routes among equal
+    # ones: long straight runs are what stride() walks smoothly in one held press.
+    start = (*w["player"], w["elevation"], None)
     dist, prev = {start: 0}, {}
     queue = [(0, start)]
     while queue:
-        d, (x, y, e) = heapq.heappop(queue)
+        d, (x, y, e, last) = heapq.heappop(queue)
         if (x, y) in goals:
-            path, s = [], (x, y, e)
+            path, s = [], (x, y, e, last)
             while s != start:
                 s, key = prev[s]
                 path.append(key)
             return path[::-1]
-        if d > dist[(x, y, e)]:
+        if d > dist[(x, y, e, last)]:
             continue
         for key, (dx, dy) in DIRS.items():
             nx, ny = x + dx, y + dy
@@ -69,11 +75,41 @@ def plan(w, goals, blocked, grass_cost=8):
                     break
                 nx, ny, beh = sx, sy, sbeh
                 ne = ne if selev == 15 else selev
-            cost = d + (grass_cost if beh == 0x02 else 1) + (30 if (nx, ny) in npcs else 0)
-            if cost < dist.get((nx, ny, ne), 1 << 30):
-                dist[(nx, ny, ne)], prev[(nx, ny, ne)] = cost, ((x, y, e), key)
-                heapq.heappush(queue, (cost, (nx, ny, ne)))
+            cost = (d + (grass_cost if beh == 0x02 else 1) + (30 if (nx, ny) in npcs else 0)
+                    + (0.1 if last and key != last else 0))
+            state = (nx, ny, ne, key)
+            if cost < dist.get(state, 1 << 30):
+                dist[state], prev[state] = cost, ((x, y, e, last), key)
+                heapq.heappush(queue, (cost, state))
     return None
+
+
+def stride(p, path, facing, max_tiles=8):
+    """Walk the straight run at the start of PATH in one held press, instead of a tap and a re-plan
+    per tile. Returns tiles moved along the path, or -1 if the player ended up off the plan (a ledge
+    jump, an ice slide, forced movement) and should re-plan."""
+    key, n = path[0], 1
+    while n < min(len(path), max_tiles) and path[n] == key:
+        n += 1
+    sb1 = p.read32(SB1_PTR)
+    start = p.range(sb1, 6)
+    # Measured on Unbound: 8 frames a tile (vanilla is 16) and 8 more to turn first. Release
+    # 4 frames before the next step would start.
+    p.press(key, TILE_FRAMES * n - 4 + (0 if facing == key.lower() else TILE_FRAMES))
+    pos = p.range(sb1, 6)
+    for _ in range(40):  # let the last step (or a slide or jump) finish
+        p.step(6)
+        now = p.range(sb1, 6)
+        if now == pos:
+            break
+        pos = now
+    x0, y0, g0, m0 = struct.unpack("<hhbb", start)
+    x1, y1, g1, m1 = struct.unpack("<hhbb", pos)
+    if (g1, m1) != (g0, m0):
+        return n  # walked off the map edge or through a warp
+    dx, dy = DIRS[key]
+    along, across = (x1 - x0) * dx + (y1 - y0) * dy, (x1 - x0) * dy + (y1 - y0) * dx
+    return -1 if across or along < 0 or along > n else along
 
 
 def exit_to(w, target):
@@ -140,7 +176,7 @@ def battle(p):
 
 def go(p, target, reroute=True):
     blocked, last, still, unknown, path, recent = set(), None, 0, 0, [], collections.deque(maxlen=20)
-    hops, last_next, closed = [], None, set()
+    hops, last_next, closed, warp_try = [], None, set(), 0
     for step in range(MAX_STEPS):
         s = get_state(p)
         where = (s["map"]["name"], tuple(s["pos"]), s["mode"], s.get("dialog"))
@@ -162,13 +198,17 @@ def go(p, target, reroute=True):
             path, blocked = [], set()
         nxt = hops[hops.index(here) + 1]
         if nxt != last_next:
-            path, blocked, last_next = [], set(), nxt
+            path, blocked, last_next, warp_try = [], set(), nxt, 0
         r = raw(p)
         if r["mode"] == "battle" or r["cb2"] == CB2_BATTLE_PARTY:
             print(f"{step}: battle -> leaving")
             battle(p)  # keep the plan: a battle doesn't change the map, and re-planning with
             continue    # post-battle HP flipped the grass cost and sent the bot back the way it came
         if r["mode"] == "dialog" or (r["mode"] == "other" and r["cb2"] == hex(CB2_OVERWORLD)):
+            if not reroute:  # the agent's tools: a script took over (story gate, NPC, event); its call
+                raise SystemExit(f"stopped: a script or dialog started at {s['map']['name']} {s['pos']} "
+                                 "(a story event, NPC or sign). Read it (advance_dialog) and decide; walking "
+                                 "the same way again will likely trigger it again.")
             print(f"{step}: {r['mode']} on the overworld -> B")
             press(p, "B")  # dialog box, start menu or a script lock: B closes or advances it
             continue
@@ -201,9 +241,30 @@ def go(p, target, reroute=True):
                 hops = []
                 continue
             print(f"{step}: plan {len(path)} steps: {''.join(k[0] for k in path)}")
-        key = path[0] if path else final
+        if path:
+            moved = stride(p, path, s.get("facing"))
+            print(f"{step}: {s['map']['name']} {w['player']} {path[0]}x{min(len(path), 8)} -> moved {moved}")
+            if moved > 0:
+                del path[:moved]
+            elif moved < 0:
+                path = []  # off the plan (ledge, ice, forced movement): re-plan from where we are
+            elif raw(p)["mode"] == "overworld":
+                x, y = w["player"]
+                dx, dy = DIRS[path[0]]
+                blocked.add((x + dx, y + dy))  # held the key and didn't move: something is there
+                print(f"{step}: blocked {(x + dx, y + dy)}")
+                path = []
+            continue
+        key = final
         if key is None:
-            stop(p, "standing on the warp but it didn't trigger")
+            # On a warp that didn't fire: warps trigger when you walk *into* them. Arrow warps say which
+            # way; building doors go UP; exit mats and the rest usually DOWN.
+            beh = w["tile"](*w["player"])[0]
+            tries = WARP_KEYS.get(beh, ["DOWN", "UP", "LEFT", "RIGHT"])
+            key = tries[warp_try % len(tries)]
+            warp_try += 1
+            if warp_try > 4:
+                stop(p, "standing on the warp but it didn't trigger in any direction")
         t = press(p, key)
         print(f"{step}: {s['map']['name']} {w['player']} {key} -> {t['after']['pos']} {t['changed']}")
         if t["moved"] and path:

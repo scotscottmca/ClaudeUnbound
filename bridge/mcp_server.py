@@ -11,6 +11,7 @@ import contextlib
 import io
 import json
 import os
+import struct
 import sys
 import tempfile
 import time
@@ -21,7 +22,7 @@ import milestones
 import wiki
 import world as W
 from probe import Probe
-from state import TEXT_PRINTERS, get_state, press, raw
+from state import get_state, press, raw
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 RUN = os.path.normpath(os.path.join(HERE, "..", "run"))
@@ -35,6 +36,22 @@ KEYS = ["A", "B", "START", "SELECT", "UP", "DOWN", "LEFT", "RIGHT", "L", "R"]
 p = None
 steps = 0
 tracker = milestones.Tracker(os.path.join(os.path.dirname(LOG), "milestones.jsonl"))
+TALKED = os.path.join(os.path.dirname(LOG), "npcs_talked.json")  # "group,num,localId" of NPCs talked to
+talked = set(json.load(open(TALKED))) if os.path.exists(TALKED) else set()
+
+
+def note_talk(s):
+    """Text just started: if the player faces an adjacent NPC or sign, remember it (talk/read once)."""
+    w = W.read_world(p)
+    dx, dy = bot.DIRS[s["facing"].upper()] if s.get("facing") else (0, 0)
+    target = (w["player"][0] + dx, w["player"][1] + dy)
+    # NPCs are keyed by their ID (they move); signs by position.
+    keys = [f"{s['map']['group']},{s['map']['num']},{n['id']}" for n in w["npcs"] if (n["x"], n["y"]) == target]
+    keys += [f"{s['map']['group']},{s['map']['num']},sign@{x['x']},{x['y']}" for x in w["signs"] if (x["x"], x["y"]) == target]
+    if set(keys) - talked:
+        talked.update(keys)
+        with open(TALKED, "w") as f:
+            json.dump(sorted(talked), f)
 last_fingerprint, unchanged, watchdog_fired = None, 0, 0
 battle_seen = False
 
@@ -98,6 +115,9 @@ def screenshot():
 def view():
     w = W.read_world(p)
     out = {"viewport": W.viewport(w), **{k: w[k] for k in ("npcs", "warps", "signs", "connections")}}
+    g, n = struct.unpack("<bb", p.range(p.read32(0x03005008) + 4, 2))  # SaveBlock1 location: group, num
+    out["npcs"] = [{**x, "talked": f"{g},{n},{x['id']}" in talked} for x in w["npcs"]]
+    out["signs"] = [{**x, "read": f"{g},{n},sign@{x['x']},{x['y']}" in talked} for x in w["signs"]]
     # Exploration aid: doors and exits leading to maps never visited yet (#15's fog of war, map level).
     out["unvisited"] = [f"{x['to']} via {('warp at (%d, %d)' % (x['x'], x['y'])) if 'x' in x else x['direction'] + ' edge'}"
                         for x in w["warps"] + w["connections"] if tuple(x["to_map"]) not in tracker.seen_maps]
@@ -127,20 +147,25 @@ def t_press_buttons(a):
 
 def t_advance_dialog(a):
     """A through dialog, collecting every box; stops before answering a question or when stuck."""
-    seen = []
-    for _ in range(a.get("max_presses", 30)):
+    seen, waited = [], 0
+    for _ in range(a.get("max_presses", 30) + 16):
         s = get_state(p)
         if s["mode"] != "dialog":
+            if raw(p)["script"] and waited < 240:  # a cutscene still running: text may be coming
+                p.step(15)
+                waited += 15
+                continue
             break
+        waited = 0
         text = s.get("dialog", "")
         if not seen or seen[-1] != text:
             seen.append(text)
         if text.rstrip().endswith("?") and seen.count(text) == 1 and len(seen) > 1 and a.get("stop_on_question", True):
             break  # a question: the agent should choose the answer itself
-        before = p.range(TEXT_PRINTERS, 4)
+        before = raw(p)["printer"][0:4]
         p.press("A", 4)
         p.step(20)
-        if seen.count(text) > 3 and p.range(TEXT_PRINTERS, 4) == before:
+        if seen.count(text) > 3 and raw(p)["printer"][0:4] == before:
             break  # A isn't advancing: probably a Yes/No or choice menu
     return {"boxes": seen, "now": raw(p)["mode"]}
 
@@ -158,40 +183,58 @@ def run_bot(fn, *args):
 
 def t_walk_to(a):
     target = (a["x"], a["y"])
-    goal = {target}
     w = W.read_world(p)
-    if bot.plan(w, goal, set()) is None:
-        # A wall, NPC or sign: go next to it and face it (that's how you talk to or read something).
-        goal = {(target[0] + dx, target[1] + dy) for dx, dy in bot.DIRS.values()}
-        print_note = f"({target[0]}, {target[1]}) isn't walkable; going next to it and facing it"
-    else:
-        print_note = None
+    npc_id = next((n["id"] for n in w["npcs"] if (n["x"], n["y"]) == target), None)
+    sign = next((x for x in w["signs"] if (x["x"], x["y"]) == target), None)
+    interact = npc_id is not None or sign is not None  # walking up to someone/something is to talk/read
+    wall = not interact and bot.plan(w, {target}, set()) is None
+
+    def goal_for(w):
+        """(where the thing is now, tiles to stand on). NPCs are followed by ID: they wander."""
+        t = target
+        if npc_id is not None:
+            n = next((n for n in w["npcs"] if n["id"] == npc_id), None)
+            if n is None:
+                raise SystemExit(f"that NPC (id {npc_id}) is no longer on this map")
+            t = (n["x"], n["y"])
+        if sign and sign["read_facing"]:  # signs read from one side only (most: from below, facing up)
+            dx, dy = bot.DIRS[sign["read_facing"].upper()]
+            return t, {(t[0] - dx, t[1] - dy)}
+        if interact or wall:
+            return t, {(t[0] + dx, t[1] + dy) for dx, dy in bot.DIRS.values()}
+        return t, {t}
 
     def walk():
-        if print_note:
-            print(print_note)
         for i in range(a.get("max_steps", 200)):
             s = get_state(p)
-            if tuple(s["pos"]) in goal:
-                if tuple(s["pos"]) != target:
-                    dx, dy = target[0] - s["pos"][0], target[1] - s["pos"][1]
-                    face = next(k for k, d in bot.DIRS.items() if d == (dx, dy))
-                    if s.get("facing") != face.lower():
-                        press(p, face)
-                print(f"arrived at {s['pos']}, facing {target}" if tuple(s["pos"]) != target else f"arrived at {s['pos']}")
-                return
             if s["mode"] != "overworld":
                 raise SystemExit(f"stopped: mode is {s['mode']}")
             w = W.read_world(p)
+            t, goal = goal_for(w)
+            if tuple(s["pos"]) in goal:
+                if tuple(s["pos"]) != t:
+                    face = next(k for k, d in bot.DIRS.items() if d == (t[0] - s["pos"][0], t[1] - s["pos"][1]))
+                    if s.get("facing") != face.lower():
+                        press(p, face)  # a short tap only turns
+                    if interact:
+                        if raw(p)["mode"] != "overworld":
+                            # Walking into a sign reads it (FireRed): the turn already opened it. Pressing A
+                            # now would close it before anyone reads it.
+                            print(f"next to {t}; turning to it opened it")
+                            return
+                        p.step(10)  # the last step's animation outlasts the position update
+                        p.press("A", 4)  # then at once, before a wandering NPC can step away
+                        p.step(30)
+                        print(f"next to {t}, facing it, pressed A")
+                        return
+                print(f"arrived at {s['pos']}" + (f", facing {t}" if tuple(s["pos"]) != t else ""))
+                return
             path = bot.plan(w, goal, set())
             if not path:
-                raise SystemExit(f"no path from {w['player']} to {target}" + (" or any tile next to it" if print_note else "")
+                raise SystemExit(f"no path from {w['player']} to {t}" + (" or any tile next to it" if interact or wall else "")
                                  + " (it may be behind a one-way ledge, on another level, or blocked)")
-            t = press(p, path[0])
-            if not t["moved"] and t["changed"] != ["facing"]:
-                t = press(p, path[0])
-                if not t["moved"]:
-                    raise SystemExit(f"blocked going {path[0]} from {w['player']}")
+            if bot.stride(p, path, s.get("facing")) == 0 and raw(p)["mode"] == "overworld":
+                raise SystemExit(f"blocked going {path[0]} from {w['player']}")
         raise SystemExit("max_steps reached")
     return run_bot(walk)
 
@@ -252,7 +295,8 @@ TOOLS = {
                        "question so you can choose the answer, or when A stops advancing (a menu).",
                        S({"max_presses": {"type": "integer"}, "stop_on_question": {"type": "boolean"}}), True),
     "walk_to": (t_walk_to, "Walk to tile (x, y) on the current map by the shortest safe path. If (x, y) is "
-                "an NPC, sign or wall, walks next to it and faces it, ready to press A. Stops at battles, "
+                "an NPC or sign, walks up to it (following a wandering NPC), faces it and presses A to talk or "
+                "read; a wall: walks next to it. Stops at battles, "
                 "dialog, or when blocked.",
                 S({"x": {"type": "integer"}, "y": {"type": "integer"}, "max_steps": {"type": "integer"}},
                   ["x", "y"]), True),
@@ -280,7 +324,9 @@ TOOLS = {
 def call(name, args):
     global steps, p
     fn, _, _, is_action = TOOLS[name]
+    mode_before = None
     try:
+        mode_before = raw(p)["mode"] if is_action else None
         result = fn(args)
     except (ConnectionError, OSError, RuntimeError) as e:
         if "connection" not in repr(e).lower() and not isinstance(e, OSError):
@@ -293,6 +339,11 @@ def call(name, args):
         steps += 1
         s = get_state(p)
         msgs = notes(s)
+        if s["mode"] == "dialog" and mode_before != "dialog":
+            try:
+                note_talk(s)
+            except Exception as e:
+                log({"step": steps, "error": f"note_talk: {e!r}"})
         try:
             for e in tracker.update(s, steps):
                 msgs.append("MILESTONE: " + json.dumps(e, ensure_ascii=False))

@@ -18,7 +18,10 @@ PLAYER_PARTY_COUNT = 0x02024029
 PLAYER_PARTY = 0x02024284  # 6 x 100, unencrypted on CFRU
 BATTLE_TYPE_FLAGS = 0x02022B4C
 BATTLE_MONS = 0x02023BE4  # 4 x 0x58
-TEXT_PRINTERS = 0x02020034  # 0x24 each
+TEXT_PRINTERS = 0x02020034  # 0x24 each, one per window
+NUM_TEXT_PRINTERS = 32
+SCRIPT_CONTEXT = 0x03000EB0  # sScriptContext1: stackDepth, mode (2 = native), pad, nativePtr
+SCRIPT_WAIT_BUTTON = {0x0806951D, 0x08A0F275}  # natives a message box waits for A in (NPC msgbox, sign)
 STRING_VAR4 = 0x02021D18
 DISPLAYED_STRING_BATTLE = 0x0202298C
 LOCK_FIELD_CONTROLS = 0x03000F9C  # u8, 1 while a script/menu/dialog holds the player
@@ -87,17 +90,28 @@ def current_text(p, printer):
     data = p.range(cur - 0x100, 0x200)
     end = next((i for i in range(0xFF, 0x200) if data[i] in (0xFB, 0xFF)), 0x200)
     start = max((i for i in range(0, end) if data[i] in (0xFB, 0xFF)), default=-1) + 1
+    if STRING_VAR4 <= cur < STRING_VAR4 + 0x400:  # most messages: never read back past the buffer's start
+        start = max(start, STRING_VAR4 - (cur - 0x100))
     return decode(data[start:end]).strip()  # padding before a buffer decodes as spaces
 
 
 def raw(p):
     """Fields the mode and press trace are built from."""
     cb1, cb2 = struct.unpack("<II", p.range(G_MAIN, 8))
-    printer = p.range(TEXT_PRINTERS, 0x24)
+    # One printer per window: NPC text uses window 0, but shops and other menus print in their own
+    # windows (#57). The first active printer is the text on screen; printer 0 if none is active.
+    printers = p.range(TEXT_PRINTERS, NUM_TEXT_PRINTERS * 0x24)
+    active = [i for i in range(NUM_TEXT_PRINTERS) if printers[i * 0x24 + 0x1B]]
+    i = active[0] if active else 0
+    printer = printers[i * 0x24:(i + 1) * 0x24]
     locked = p.read8(LOCK_FIELD_CONTROLS)
-    mode = ("battle" if cb2 == CB2_BATTLE else "dialog" if printer[0x1B]
+    # A finished message waiting for A has no active printer: the script is parked in its
+    # wait-for-button native routine instead.
+    ctx = p.range(SCRIPT_CONTEXT, 8)
+    waiting = ctx[1] == 2 and struct.unpack("<I", ctx[4:8])[0] in SCRIPT_WAIT_BUTTON
+    mode = ("battle" if cb2 == CB2_BATTLE else "dialog" if active or waiting
             else "overworld" if cb2 == CB2_OVERWORLD and not locked else "other")
-    return {"cb2": hex(cb2), "locked": locked, "printer": printer, "mode": mode}
+    return {"cb2": hex(cb2), "locked": locked, "printer": printer, "mode": mode, "script": ctx[1]}
 
 
 def get_state(p):

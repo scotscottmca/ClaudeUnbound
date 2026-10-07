@@ -4,9 +4,9 @@ How Claude should play Unbound. Unbound is very in-depth, so the goal is a thoro
 
 ## Exploration
 
-- Talk to as many NPCs as possible.
+- Talk to every NPC **once**, and remember what they said. Talk to them again only if they gave a reason to come back (a trade, a mission to report back on, "show me X Pokémon", a rematch). Decided 2026-10-07.
 - Enter every building.
-- Read every notice board and store it in memory. Notice boards carry important information.
+- Read every sign and notice board **once** and store what matters in memory (notice boards always: they carry important information). Don't re-read them.
 
 ## Conversations
 

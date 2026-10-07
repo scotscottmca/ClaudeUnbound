@@ -49,17 +49,25 @@ class RomFile:
         return self.range(addr, 1)[0]
 
 
-ROM = RomFile(os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "run", "Unbound.gba"))
+_rom = None
+
+
+def rom():
+    """The run's ROM file, loaded on first use (so importing world doesn't need it)."""
+    global _rom
+    if _rom is None:
+        _rom = RomFile(os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "run", "Unbound.gba"))
+    return _rom
 
 
 def header_of(_p, group, num):
-    p = ROM
     """ROM map header address, via Unbound's XOR-obfuscated map-group table."""
+    p = rom()
     return u32(p, (u32(p, MAP_GROUPS + 4 * group) ^ MAP_GROUPS_KEY) + 4 * num)
 
 
 def map_name(_p, group, num):
-    return NAMES["mapsecs"][str(ROM.read8(header_of(ROM, group, num) + 0x14))]
+    return NAMES["mapsecs"][str(rom().read8(header_of(None, group, num) + 0x14))]
 
 
 _links = {}
@@ -67,7 +75,7 @@ _links = {}
 
 def map_links(_p, group, num):
     """Maps reachable in one hop from (group, num): connections and warps, from the ROM header."""
-    p = ROM
+    p = rom()
     if (group, num) not in _links:
         header = header_of(p, group, num)
         events, _, connections = struct.unpack("<III", p.range(header + 4, 12))
@@ -136,7 +144,8 @@ def read_world(p):
     for i in range(n_bg):
         x, y, _, kind = struct.unpack("<HHBB", p.range(bg_ptr + 12 * i, 6))
         if kind < 5:  # 7 = hidden item, 8 = secret base
-            signs.append({"x": x, "y": y})
+            # 0: readable from any side; 1-4: only while facing up/down/right/left (most signs: up).
+            signs.append({"x": x, "y": y, "read_facing": [None, "up", "down", "right", "left"][kind]})
     conns = []
     if connections:
         count, ptr = struct.unpack("<iI", p.range(connections, 8))
