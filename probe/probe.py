@@ -4,9 +4,11 @@
     python probe.py range 0x02024284 100
     python probe.py step 60
     python probe.py press A [FRAMES]
+    python probe.py shot screen.png
     python probe.py dump 0x02000000 0x40000 before.bin    # snapshot
     python probe.py diff before.bin after.bin [BASE]      # changed bytes, offline
 """
+import os
 import socket
 import sys
 
@@ -37,6 +39,7 @@ class Probe:
 
     def step(self, frames): self.cmd(f"step {frames}")
     def press(self, key, frames=4): self.cmd(f"press {key} {frames}")
+    def shot(self, path): self.cmd(f"shot {os.path.abspath(path)}")
 
 
 def diff(a, b, base=0):
@@ -61,6 +64,8 @@ def main(argv):
         open(args[2], "wb").write(p.range(num(args[0]), num(args[1])))
     elif cmd == "step":
         p.step(num(args[0]))
+    elif cmd == "shot":
+        p.shot(args[0])
     elif cmd == "press":
         p.press(args[0], *map(num, args[1:]))
     else:
