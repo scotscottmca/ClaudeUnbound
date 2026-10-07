@@ -7,7 +7,7 @@
 --   press KEY [FRAMES]         -> hold KEY (A B START SELECT UP DOWN LEFT RIGHT L R) for FRAMES (default 4), release, "ok"
 --   save PATH / load PATH      -> savestate to/from file (everything, incl. RTC and save data), "ok"
 --   autosave DIR FRAMES [KEEP] -> every FRAMES frames save DIR/auto-N.ss1, cycling N over KEEP files (default 10); FRAMES 0 stops
--- Errors reply "err <message>".
+-- Errors reply "err <message>". While one client's step/press is pending, other clients may only read and shoot.
 
 local PORT = 8888
 local pending -- frame-based command waiting to finish: {sock, frames, key}
@@ -34,8 +34,10 @@ local function hex(data)
 end
 
 local function handle(sock, line)
-	if pending then return reply(sock, "err busy: another client's command is running") end
 	local cmd, a, b = line:match("^(%S+)%s*(%S*)%s*(%S*)")
+	-- Reads and screenshots don't advance frames, so they're safe beside another client's pending command (#58).
+	local readonly = cmd == "read8" or cmd == "read16" or cmd == "read32" or cmd == "range" or cmd == "shot"
+	if pending and not readonly then return reply(sock, "err busy: another client's command is running") end
 	if cmd == "press" then
 		local key = C.GBA_KEY[a:upper()]
 		if not key then return reply(sock, "err unknown key " .. a) end
