@@ -34,7 +34,7 @@ LOG = os.environ.get("UNBOUND_LOG") or os.path.join(RUN, "log.jsonl")
 VERIFY_EVERY = 20  # actions between Sonnet verification checks
 VERIFY_GRACE = 3  # actions allowed after a VERIFY note before game actions are blocked
 verify_due = 0  # action number when verification became due (0: none pending)
-IRREVERSIBLE = ("forget", "forgot", "delete", "release", "toss", "throw away", "discard", "give up", "overwrite", "stop learning")
+IRREVERSIBLE = ("forget", "forgot", "delete", "make room", "release", "toss", "throw away", "discard", "give up", "overwrite", "stop learning")
 LEARN_EVERY = 40  # actions between self-learning checks (asked for every 25-50 steps)
 STALL_AFTER = 15  # actions with no change in map/position/mode/dialog
 TRAINER = 0x8  # gBattleTypeFlags bit
@@ -68,7 +68,7 @@ battle_seen = False
 
 def fingerprint(s):
     return (s["map"]["group"], s["map"]["num"], tuple(s["pos"]), s["mode"], s.get("dialog"),
-            json.dumps(s.get("battle", {}).get("battlers")))
+            json.dumps(s.get("battle", {}).get("battlers")), (s.get("battle") or {}).get("text"))
 
 
 def summary(s):
@@ -106,8 +106,9 @@ def notes(s):
         verify_due = verify_due or steps
         out.append(f"VERIFY (action {steps}): ask the verifier subagent to check the last stretch against the game "
                    "state: what you did, what you believe, what you plan next. Follow its corrections.")
-    text = (s.get("dialog") or "").lower()
-    if s["mode"] == "dialog" and text.rstrip().endswith("?") and any(w in text for w in IRREVERSIBLE):
+    # Battle prompts too: "Delete a move?" when learning a fifth move happens inside battle.
+    text = (s.get("dialog") or (s.get("battle") or {}).get("text") or "").lower()
+    if s["mode"] in ("dialog", "battle") and text.rstrip().endswith("?") and any(w in text for w in IRREVERSIBLE):
         verify_due = verify_due or steps
         out.append("VERIFY before answering: this looks irreversible. Ask the verifier subagent to approve your "
                    "answer first.")
