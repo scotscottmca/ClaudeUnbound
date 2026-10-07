@@ -55,6 +55,12 @@ Failures, their root causes, and the rule each one taught. Read this before buil
 | 2026-10-07 | travel_to kept walking into a story gate ("Claude! What are you doing?"), and the user spotted the loop before I did, a third time | The bot path pressed B through the gate's script and retried; my test ran unguarded with a 500 s timeout | Tools stop when a script takes over; my own test scripts are autonomous loops too: cap steps and time, and watch them |
 | 2026-10-07 | Committed code whose test hadn't run (twice), and an edit I thought applied had been refused | Chained commit after a test that failed; the editor refuses unread files | Commit only behind a passing test (`test && commit`); confirm every edit result |
 
+| 2026-10-07 | Haiku 5.5 (default tier) ignored every VERIFY note: 61 actions, no verifier calls | Harness notes are suggestions; a cheaper model drops them | Anything that must happen is enforced in code (the verification gate blocks game actions until a verifier records a check) |
+| 2026-10-07 | The irreversible-prompt check would never see "Delete a move?" | It only read overworld dialog; move learning happens in battle | Check a trigger against every context its event occurs in |
+| 2026-10-07 | Watchdog fired while battle text advanced box by box | Its fingerprint ignored battle text | Progress signals must include every visible state that can change |
+| 2026-10-07 | wiki_read, save_state called with missing/renamed arguments (KeyError) | Tools required exact argument names; models reach for natural ones (url) or omit optional-looking ones (name) | Accept the natural aliases, default what can be defaulted, and return a usable error for the rest |
+| 2026-10-07 | A second emulator on another port never served | Couldn't see its scripting console; os.getenv / load-reset unconfirmed | Don't sink time into an unobservable side path: test on the main instance at a paused moment instead |
+
 ## Signals found along the way
 
 - Battle: player controller `gBattlerControllerFuncs[0]` (0x03004FE0) = 0x0802E439 at the action menu, 0x0802EA11 at the move menu. Cursors: action 0x02023FF8 (0 Fight, 1 Cube, 2 Pokémon, 3 Run), move 0x02023FFC.
