@@ -207,11 +207,8 @@ def t_walk_to(a):
             if not path:
                 raise SystemExit(f"no path from {w['player']} to {target}" + (" or any tile next to it" if print_note else "")
                                  + " (it may be behind a one-way ledge, on another level, or blocked)")
-            t = press(p, path[0])
-            if not t["moved"] and t["changed"] != ["facing"]:
-                t = press(p, path[0])
-                if not t["moved"]:
-                    raise SystemExit(f"blocked going {path[0]} from {w['player']}")
+            if bot.stride(p, path, s.get("facing")) == 0 and raw(p)["mode"] == "overworld":
+                raise SystemExit(f"blocked going {path[0]} from {w['player']}")
         raise SystemExit("max_steps reached")
     return run_bot(walk)
 

@@ -11,10 +11,11 @@ import collections
 import heapq
 import json
 import os
+import struct
 import sys
 
 from probe import Probe
-from state import CB2_OVERWORLD, get_state, press, raw
+from state import CB2_OVERWORLD, SB1_PTR, get_state, press, raw
 import world as W
 
 DIRS = {"UP": (0, -1), "DOWN": (0, 1), "LEFT": (-1, 0), "RIGHT": (1, 0)}
@@ -76,6 +77,33 @@ def plan(w, goals, blocked, grass_cost=8):
                 dist[(nx, ny, ne)], prev[(nx, ny, ne)] = cost, ((x, y, e), key)
                 heapq.heappush(queue, (cost, (nx, ny, ne)))
     return None
+
+
+def stride(p, path, facing, max_tiles=8):
+    """Walk the straight run at the start of PATH in one held press: smooth, ~16 frames a tile,
+    instead of a tap and a re-plan per tile. Returns tiles moved along the path, or -1 if the
+    player ended up off the plan (a ledge jump, an ice slide, forced movement) and should re-plan."""
+    key, n = path[0], 1
+    while n < min(len(path), max_tiles) and path[n] == key:
+        n += 1
+    sb1 = p.read32(SB1_PTR)
+    start = p.range(sb1, 6)
+    # Release just before the last step would repeat; a turn first costs a few extra frames.
+    p.press(key, 16 * n - 4 + (0 if facing == key.lower() else 8))
+    pos = p.range(sb1, 6)
+    for _ in range(40):  # let the last step (or a slide or jump) finish
+        p.step(6)
+        now = p.range(sb1, 6)
+        if now == pos:
+            break
+        pos = now
+    x0, y0, g0, m0 = struct.unpack("<hhbb", start)
+    x1, y1, g1, m1 = struct.unpack("<hhbb", pos)
+    if (g1, m1) != (g0, m0):
+        return n  # walked off the map edge or through a warp
+    dx, dy = DIRS[key]
+    along, across = (x1 - x0) * dx + (y1 - y0) * dy, (x1 - x0) * dy + (y1 - y0) * dx
+    return -1 if across or along < 0 or along > n else along
 
 
 def exit_to(w, target):
@@ -203,7 +231,21 @@ def go(p, target, reroute=True):
                 hops = []
                 continue
             print(f"{step}: plan {len(path)} steps: {''.join(k[0] for k in path)}")
-        key = path[0] if path else final
+        if path:
+            moved = stride(p, path, s.get("facing"))
+            print(f"{step}: {s['map']['name']} {w['player']} {path[0]}x{min(len(path), 8)} -> moved {moved}")
+            if moved > 0:
+                del path[:moved]
+            elif moved < 0:
+                path = []  # off the plan (ledge, ice, forced movement): re-plan from where we are
+            elif raw(p)["mode"] == "overworld":
+                x, y = w["player"]
+                dx, dy = DIRS[path[0]]
+                blocked.add((x + dx, y + dy))  # held the key and didn't move: something is there
+                print(f"{step}: blocked {(x + dx, y + dy)}")
+                path = []
+            continue
+        key = final
         if key is None:
             # On a warp that didn't fire: warps trigger when you walk *into* them. Arrow warps say which
             # way; building doors go UP; exit mats and the rest usually DOWN.
