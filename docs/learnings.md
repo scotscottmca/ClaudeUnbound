@@ -38,6 +38,8 @@ Failures, their root causes, and the rule each one taught. Read this before buil
 | 2026-10-07 | My run monitor never fired during the first 200 agent actions | `grep --line-buffered` piped into `cut`, which buffers; events sat in the pipe | 3: every pipe stage in a watch must flush per line (`awk ... fflush()`); verify a watch fires once before trusting its silence |
 | 2026-10-07 | The agent asked `walk_to` for a shelf tile and fell back to one press per turn | Tools assumed the target is walkable; agents aim at what they see (NPCs, signs, objects) | Design tools for the target the model will naturally give (walk next to it and face it) |
 
+| 2026-10-07 | Told the user "there is no Sonnet 5.5"; it exists (it's the current `sonnet` alias) | Trusted a cached model table from June instead of checking live | 1: check the live source (a one-line `claude -p --model X` call) before stating a fact about models |
+
 ## Signals found along the way
 
 - Battle: player controller `gBattlerControllerFuncs[0]` (0x03004FE0) = 0x0802E439 at the action menu, 0x0802EA11 at the move menu. Cursors: action 0x02023FF8 (0 Fight, 1 Cube, 2 Pokémon, 3 Run), move 0x02023FFC.
