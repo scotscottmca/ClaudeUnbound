@@ -3,3 +3,4 @@
 *.ss*
 *.ups
 *.bps
+__pycache__/
