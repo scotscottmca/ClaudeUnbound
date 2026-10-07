@@ -34,18 +34,20 @@ def plan(w, goals, blocked, grass_cost=8):
     px, py = w["player"]
     npcs = {(n["x"], n["y"]) for n in w["npcs"]}
     occupied = {t for t in npcs if abs(t[0] - px) + abs(t[1] - py) <= 1} | blocked
-    start = (*w["player"], w["elevation"])
+    # State carries the last direction so a small turn penalty picks straight routes among equal
+    # ones: long straight runs are what stride() walks smoothly in one held press.
+    start = (*w["player"], w["elevation"], None)
     dist, prev = {start: 0}, {}
     queue = [(0, start)]
     while queue:
-        d, (x, y, e) = heapq.heappop(queue)
+        d, (x, y, e, last) = heapq.heappop(queue)
         if (x, y) in goals:
-            path, s = [], (x, y, e)
+            path, s = [], (x, y, e, last)
             while s != start:
                 s, key = prev[s]
                 path.append(key)
             return path[::-1]
-        if d > dist[(x, y, e)]:
+        if d > dist[(x, y, e, last)]:
             continue
         for key, (dx, dy) in DIRS.items():
             nx, ny = x + dx, y + dy
@@ -72,10 +74,12 @@ def plan(w, goals, blocked, grass_cost=8):
                     break
                 nx, ny, beh = sx, sy, sbeh
                 ne = ne if selev == 15 else selev
-            cost = d + (grass_cost if beh == 0x02 else 1) + (30 if (nx, ny) in npcs else 0)
-            if cost < dist.get((nx, ny, ne), 1 << 30):
-                dist[(nx, ny, ne)], prev[(nx, ny, ne)] = cost, ((x, y, e), key)
-                heapq.heappush(queue, (cost, (nx, ny, ne)))
+            cost = (d + (grass_cost if beh == 0x02 else 1) + (30 if (nx, ny) in npcs else 0)
+                    + (0.1 if last and key != last else 0))
+            state = (nx, ny, ne, key)
+            if cost < dist.get(state, 1 << 30):
+                dist[state], prev[state] = cost, ((x, y, e, last), key)
+                heapq.heappush(queue, (cost, state))
     return None
 
 
