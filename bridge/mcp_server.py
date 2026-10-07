@@ -150,13 +150,28 @@ def run_bot(fn, *args):
 
 
 def t_walk_to(a):
-    goal = {(a["x"], a["y"])}
+    target = (a["x"], a["y"])
+    goal = {target}
+    w = W.read_world(p)
+    if bot.plan(w, goal, set()) is None:
+        # A wall, NPC or sign: go next to it and face it (that's how you talk to or read something).
+        goal = {(target[0] + dx, target[1] + dy) for dx, dy in bot.DIRS.values()}
+        print_note = f"({target[0]}, {target[1]}) isn't walkable; going next to it and facing it"
+    else:
+        print_note = None
 
     def walk():
+        if print_note:
+            print(print_note)
         for i in range(a.get("max_steps", 60)):
             s = get_state(p)
             if tuple(s["pos"]) in goal:
-                print(f"arrived at {s['pos']}")
+                if tuple(s["pos"]) != target:
+                    dx, dy = target[0] - s["pos"][0], target[1] - s["pos"][1]
+                    face = next(k for k, d in bot.DIRS.items() if d == (dx, dy))
+                    if s.get("facing") != face.lower():
+                        press(p, face)
+                print(f"arrived at {s['pos']}, facing {target}" if tuple(s["pos"]) != target else f"arrived at {s['pos']}")
                 return
             if s["mode"] != "overworld":
                 raise SystemExit(f"stopped: mode is {s['mode']}")
@@ -218,8 +233,9 @@ TOOLS = {
     "advance_dialog": (t_advance_dialog, "Press A through dialog and return every text box seen. Stops at a "
                        "question so you can choose the answer, or when A stops advancing (a menu).",
                        S({"max_presses": {"type": "integer"}, "stop_on_question": {"type": "boolean"}}), True),
-    "walk_to": (t_walk_to, "Walk to tile (x, y) on the current map by the shortest safe path. Stops at "
-                "battles, dialog, or when blocked.",
+    "walk_to": (t_walk_to, "Walk to tile (x, y) on the current map by the shortest safe path. If (x, y) is "
+                "an NPC, sign or wall, walks next to it and faces it, ready to press A. Stops at battles, "
+                "dialog, or when blocked.",
                 S({"x": {"type": "integer"}, "y": {"type": "integer"}, "max_steps": {"type": "integer"}},
                   ["x", "y"]), True),
     "travel_to": (t_travel_to, "Travel to the named map (e.g. 'Route 2') across maps via doors and edges. "
