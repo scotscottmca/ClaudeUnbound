@@ -105,11 +105,15 @@ def notes(s):
         flags = int(s["battle"]["flags"], 16)
         foes = [b for b in s["battle"]["battlers"] if b["side"] == "opponent"]
         mine = [b for b in s["battle"]["battlers"] if b["side"] == "player"]
-        if flags & TRAINER:
-            strong = foes and mine and max(f["level"] for f in foes) >= max(m["level"] for m in mine)
-            out.append("ESCALATE to the expert subagent: trainer battle against an equal or higher level foe."
-                       if strong else
-                       "ESCALATE to the strategist subagent: trainer battle. Ask it for a plan, then execute it.")
+        if flags & TRAINER and foes and mine:
+            # Only spend a stronger model where it matters: the agent rightly ignored the note for an
+            # easy trainer, and a note it learns to ignore is worse than none.
+            gap = max(f["level"] for f in foes) - max(m["level"] for m in mine)
+            if gap >= 0:
+                out.append("ESCALATE to the expert subagent: trainer battle against an equal or higher level foe.")
+            elif gap >= -2:
+                out.append("ESCALATE to the strategist subagent: trainer battle against a close-level foe. "
+                           "Ask it for a plan, then execute it.")
     battle_seen = in_battle
     return out
 
