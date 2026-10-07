@@ -26,6 +26,7 @@ from probe import Probe  # noqa: E402
 from state import get_state  # noqa: E402
 
 CLAUDE = shutil.which("claude") or os.path.expanduser(r"~\.local\bin\claude.exe")
+CONTEXT_LIMIT = 160_000  # rotate to a fresh session past this (tokens re-read every turn)
 MAIN_MODEL = "claude-sonnet-5-5"  # the router: escalates to Opus 5.5 / Fable 5.1 subagents
 TOOLS = ["mcp__unbound", "Read", "Write", "Edit", "Glob", "Grep", "Task", "Agent"]
 MEMORY_SEED = {"objectives.md": "# Objectives\n\n- Goal: earn the first badge (Dresco Town gym).\n- Next: find out where I am and what the current mission says.\n",
@@ -84,13 +85,24 @@ def chunk(ws, first):
     with open(os.path.join(ws, "transcripts", f"{int(started)}.jsonl"), "w", encoding="utf-8") as out:
         proc = subprocess.Popen(args, cwd=ws, stdout=subprocess.PIPE, stdin=subprocess.DEVNULL,
                                 text=True, encoding="utf-8", errors="replace")
+        context = 0
         for line in proc.stdout:
             out.write(line)
             try:
                 ev = json.loads(line)
             except json.JSONDecodeError:
                 continue
+            if ev.get("type") == "user" and context > CONTEXT_LIMIT and last_mode(ws) == "overworld":
+                # Every turn re-reads the whole conversation (#54: ~300k tokens a turn after 400 actions).
+                # Between actions and out of battle, end the chunk; the next one starts fresh from memory/.
+                print(f"  context {context // 1000}k > {CONTEXT_LIMIT // 1000}k: rotating to a fresh session")
+                proc.terminate()
+                proc.wait()
+                return {"rotated": True, "result": f"rotated at {context} context tokens"}, time.time() - started
             if ev.get("type") == "assistant":
+                u = ev["message"].get("usage") or {}
+                context = sum(u.get(k, 0) or 0 for k in ("input_tokens", "cache_read_input_tokens",
+                                                          "cache_creation_input_tokens"))
                 for block in ev["message"].get("content", []):
                     if block.get("type") == "text" and block["text"].strip():
                         print("  agent:", block["text"].strip()[:300])
@@ -100,6 +112,17 @@ def chunk(ws, first):
                 result = ev
         proc.wait()
     return result or {"is_error": True, "result": f"no result (exit {proc.returncode})"}, time.time() - started
+
+
+def last_mode(ws):
+    """Mode after the agent's latest action, from the MCP action log ("" if unknown)."""
+    try:
+        with open(os.path.join(ws, "log.jsonl"), "rb") as f:
+            f.seek(max(0, os.path.getsize(f.name) - 4000))
+            lines = [l for l in f.read().decode("utf-8", "replace").splitlines() if '"now"' in l]
+        return json.loads(lines[-1])["now"]["mode"] if lines else ""
+    except (OSError, ValueError, KeyError):
+        return ""
 
 
 def milestone():
@@ -150,7 +173,7 @@ def main():
             print(f"usage window exhausted; waiting {wait / 60:.0f} min")
             time.sleep(wait)
             continue
-        first = False
+        first = bool(res.get("rotated"))  # a rotated chunk continues as a fresh session
         if entry["milestone"].get("badges", 0) >= a.goal_badges or "GOAL REACHED" in text:
             print("goal reached:", entry["milestone"])
             return
