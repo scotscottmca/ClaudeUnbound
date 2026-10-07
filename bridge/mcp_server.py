@@ -34,6 +34,7 @@ LOG = os.environ.get("UNBOUND_LOG") or os.path.join(RUN, "log.jsonl")
 VERIFY_EVERY = 20  # actions between Sonnet verification checks
 VERIFY_GRACE = 3  # actions allowed after a VERIFY note before game actions are blocked
 verify_due = 0  # action number when verification became due (0: none pending)
+last_prompt = None  # irreversible prompt already flagged
 IRREVERSIBLE = ("forget", "forgot", "delete", "make room", "release", "toss", "throw away", "discard", "give up", "overwrite", "stop learning")
 LEARN_EVERY = 40  # actions between self-learning checks (asked for every 25-50 steps)
 STALL_AFTER = 15  # actions with no change in map/position/mode/dialog
@@ -108,10 +109,15 @@ def notes(s):
                    "state: what you did, what you believe, what you plan next. Follow its corrections.")
     # Battle prompts too: "Delete a move?" when learning a fifth move happens inside battle.
     text = (s.get("dialog") or (s.get("battle") or {}).get("text") or "").lower()
+    global last_prompt
     if s["mode"] in ("dialog", "battle") and text.rstrip().endswith("?") and any(w in text for w in IRREVERSIBLE):
         verify_due = verify_due or steps
-        out.append("VERIFY before answering: this looks irreversible. Ask the verifier subagent to approve your "
-                   "answer first.")
+        if text != last_prompt:  # once per prompt: repeating it every action only costs context
+            out.append("VERIFY before answering: this looks irreversible. Ask the verifier subagent to approve your "
+                       "answer first.")
+        last_prompt = text
+    else:
+        last_prompt = None
     if steps and steps % LEARN_EVERY == 0:
         out.append(f"LEARNING CHECK (action {steps}): review what happened since the last check. Record "
                    "new facts in memory/, add a learnings.md entry for anything that failed or surprised "
