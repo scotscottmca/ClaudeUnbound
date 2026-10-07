@@ -20,7 +20,8 @@ import world as W
 DIRS = {"UP": (0, -1), "DOWN": (0, 1), "LEFT": (-1, 0), "RIGHT": (1, 0)}
 EDGE = {"north": "UP", "south": "DOWN", "west": "LEFT", "east": "RIGHT"}
 LEDGE_DIR = {0x38: "RIGHT", 0x39: "LEFT", 0x3A: "UP", 0x3B: "DOWN"}
-AVOID = W.WATER | W.ICE | W.FORCED | {0x13}
+SLIDE_ICE = 0x23  # slides you; thin (0x26) and cracked (0x27) ice are puzzles, still avoided
+AVOID = W.WATER | (W.ICE - {SLIDE_ICE}) | W.FORCED | {0x13}
 MAX_STEPS = 600
 
 
@@ -58,6 +59,16 @@ def plan(w, goals, blocked, grass_cost=8):
             if col or beh in AVOID or (e and elev not in (0, 15, e)):
                 continue
             ne = e if elev == 15 else elev
+            # Ice: you keep sliding until the next tile is blocked or you reach ground that isn't ice.
+            while beh == SLIDE_ICE:
+                sx, sy = nx + dx, ny + dy
+                if not (0 <= sx < w["width"] and 0 <= sy < w["height"]) or (sx, sy) in occupied:
+                    break
+                sbeh, scol, selev = w["tile"](sx, sy)
+                if scol or sbeh in AVOID or sbeh in LEDGE_DIR or (ne and selev not in (0, 15, ne)):
+                    break
+                nx, ny, beh = sx, sy, sbeh
+                ne = ne if selev == 15 else selev
             cost = d + (grass_cost if beh == 0x02 else 1) + (30 if (nx, ny) in npcs else 0)
             if cost < dist.get((nx, ny, ne), 1 << 30):
                 dist[(nx, ny, ne)], prev[(nx, ny, ne)] = cost, ((x, y, e), key)
