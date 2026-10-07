@@ -24,7 +24,7 @@ from probe import Probe  # noqa: E402
 from state import get_state  # noqa: E402
 
 CLAUDE = shutil.which("claude") or os.path.expanduser(r"~\.local\bin\claude.exe")
-MAIN_MODEL = "claude-sonnet-5"
+MAIN_MODEL = "claude-sonnet-5-5"  # the router: escalates to Opus 5.5 / Fable 5.1 subagents
 TOOLS = ["mcp__unbound", "Read", "Write", "Edit", "Glob", "Grep", "Task", "Agent"]
 MEMORY_SEED = {"objectives.md": "# Objectives\n\n- Goal: earn the first badge (Dresco Town gym).\n- Next: find out where I am and what the current mission says.\n",
                "learnings.md": "# Learnings\n\n"}
