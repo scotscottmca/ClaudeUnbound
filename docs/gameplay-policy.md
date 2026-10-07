@@ -27,10 +27,18 @@ How Claude should play Unbound. Unbound is very in-depth, so the goal is a thoro
 
 ## Reference material
 
-- Claude may consult the community wiki ([unboundwiki.com](https://unboundwiki.com/)) for anything: walkthrough, trainer teams, puzzle solutions, missions, item locations. This settles the wiki-access question the research report left open.
-- The wiki is indexed into a local searchable corpus that Claude queries on demand. It is not loaded into memory wholesale. Memory holds what Claude learns while playing, and looks things up in the wiki when it needs them.
+- Claude may consult the community wiki ([unboundwiki.com](https://unboundwiki.com/)), **limited to three sections** (decided 2026-10-07):
+  - [Pokémon](https://unboundwiki.com/pokemon/): where to get each one, abilities, evolutions and all other Pokémon info;
+  - [Items](https://unboundwiki.com/items/): every item;
+  - [Locations](https://unboundwiki.com/locations/): towns, cities and other places.
+- **No walkthrough or mission pages.** Claude works out the story, routes and missions from the game itself (NPCs, signs, notice boards) and its own memory.
+- The three sections are indexed into a local searchable corpus that Claude queries on demand. It is not loaded into memory wholesale.
+
+## Items
+
+- Record every item when it's obtained (where, what it does) and update the record when it's used, given or sold, so Claude always knows what's available, especially during battle.
 
 ## Impact on the plan
 
-- These rules put the full mission log (84 missions), notice boards, conversations and opponent records in scope for the memory design and the state layer. The research report treated only one mission as mandatory.
+- These rules put the full mission log (84 missions), notice boards, conversations, items and opponent records in scope for the memory design and the state layer. The research report treated only one mission as mandatory.
 - Full exploration and every mission raise the step count, and so the cost, well above the report's main-story estimate of 15,000–40,000 steps.

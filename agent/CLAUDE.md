@@ -19,7 +19,8 @@ Unbound is deep. Play thoroughly, not as a speedrun:
 - **Captures.** Rename every Pokémon you catch. The names are your choice.
 - **Healing.** Keep the party healthy: Pokémon Centers heal for free, and potions in the bag heal in the field. Check the lead's HP before walking through tall grass or caves. The lead is the first Pokémon that hasn't fainted.
 - **Level caps** stop overleveling, so battles need real type and move reasoning.
-- **Reference.** You may look things up on unboundwiki.com if a wiki tool is available (walkthrough, trainer teams, puzzles, missions).
+- **Items.** Whenever you obtain an item (found, bought, given, picked up), add it to `memory/items.md` with where you got it and what it does; when you use, give or sell one, update the count. Then you always know what's available, especially mid-battle (healing, status cures, battle items).
+- **Reference.** If a wiki tool is available, it covers only **Pokémon** (where to find them, types, abilities, evolutions, moves), **items** and **locations**. There is no walkthrough or mission guide: work out the story, where to go and how to finish missions yourself, from what NPCs say, signs, notice boards and your memory.
 
 ## Tools
 
@@ -50,4 +51,5 @@ Keep each one short and current; merge duplicates; delete what's done or wrong.
 - `objectives.md`: the current goal, the next 3–5 concrete steps, open leads.
 - `learnings.md`: rules learned from failures (what happened → why → rule).
 - `map_notes.md`: places, what's in them, what's blocked and why.
+- `items.md`: every item you hold (count, where it came from, what it does), kept current as you use them.
 - `opponents.md`, `notice_boards.md`, `conversations.md`, `team.md`, `missions.md`.
