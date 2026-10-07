@@ -61,6 +61,8 @@ Failures, their root causes, and the rule each one taught. Read this before buil
 | 2026-10-07 | wiki_read, save_state called with missing/renamed arguments (KeyError) | Tools required exact argument names; models reach for natural ones (url) or omit optional-looking ones (name) | Accept the natural aliases, default what can be defaulted, and return a usable error for the rest |
 | 2026-10-07 | A second emulator on another port never served | Couldn't see its scripting console; os.getenv / load-reset unconfirmed | Don't sink time into an unobservable side path: test on the main instance at a paused moment instead |
 
+| 2026-10-07 | The Sonnet verifier rejected Haiku's move-learning answer, saying the prompt was for another Pokémon; Haiku checked and was right (Pearl learned Slam) | The verifier read the screenshot instead of the battle text, which names the Pokémon | A verifier is evidence-checked too: tell it to prefer exact state text over screenshots, and the player to settle disagreements by looking |
+
 ## Signals found along the way
 
 - Battle: player controller `gBattlerControllerFuncs[0]` (0x03004FE0) = 0x0802E439 at the action menu, 0x0802EA11 at the move menu. Cursors: action 0x02023FF8 (0 Fight, 1 Cube, 2 Pokémon, 3 Run), move 0x02023FFC.
