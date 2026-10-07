@@ -170,7 +170,7 @@ def t_walk_to(a):
     def walk():
         if print_note:
             print(print_note)
-        for i in range(a.get("max_steps", 60)):
+        for i in range(a.get("max_steps", 200)):
             s = get_state(p)
             if tuple(s["pos"]) in goal:
                 if tuple(s["pos"]) != target:
@@ -203,10 +203,10 @@ def t_travel_to(a):
             raise SystemExit("stopped: wild battle started")
         old, bot.battle = bot.battle, stop_on_battle
         try:
-            return run_bot(bot.go, p, a["map"])
+            return run_bot(bot.go, p, a["map"], False)
         finally:
             bot.battle = old
-    return run_bot(bot.go, p, a["map"])
+    return run_bot(bot.go, p, a["map"], False)
 
 
 def t_save_state(a):
@@ -257,8 +257,8 @@ TOOLS = {
                 S({"x": {"type": "integer"}, "y": {"type": "integer"}, "max_steps": {"type": "integer"}},
                   ["x", "y"]), True),
     "travel_to": (t_travel_to, "Travel to the named map (e.g. 'Route 2') across maps via doors and edges. "
-                  "Stops when a wild battle starts unless on_wild_battle='flee'. Story-blocked paths are "
-                  "routed around; if none is open it stops and says so.",
+                  "Stops when a wild battle starts unless on_wild_battle='flee'. If the way is blocked (a "
+                  "story gate, an object, a one-way ledge) it stops and says where, so you can decide.",
                   S({"map": {"type": "string"}, "on_wild_battle": {"type": "string", "enum": ["stop", "flee"]},
                      "max_steps": {"type": "integer"}}, ["map"]), True),
     "save_state": (t_save_state, "Save an emulator savestate under a name (for rollback).",
@@ -300,7 +300,7 @@ def call(name, args):
             log({"step": steps, "error": f"milestones: {e!r}"})
         content.append({"type": "text", "text": json.dumps({"now": summary(s), "harness": msgs},
                                                           ensure_ascii=False)})
-        brief = result.get("result") if isinstance(result, dict) else result  # walk/travel outcome, press traces
+        brief = result.get("result", result) if isinstance(result, dict) else result
         log({"step": steps, "tool": name, "args": args, "result": json.dumps(brief, ensure_ascii=False)[:300],
              "now": summary(s), "harness": msgs})
     else:

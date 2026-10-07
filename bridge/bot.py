@@ -138,7 +138,7 @@ def battle(p):
     stop(p, "battle didn't end (trainer battle, or a prompt the bot doesn't know)")
 
 
-def go(p, target):
+def go(p, target, reroute=True):
     blocked, last, still, unknown, path, recent = set(), None, 0, 0, [], collections.deque(maxlen=20)
     hops, last_next, closed = [], None, set()
     for step in range(MAX_STEPS):
@@ -192,6 +192,11 @@ def go(p, target):
                 # Story gates (e.g. an invisible blocker on a cave mouth) close a hop the ROM
                 # graph thinks is open: close it and route around.
                 print(f"{step}: can't reach {W.map_name(p, *nxt)}{list(nxt)} from {w['player']}; closing it")
+                if not reroute:  # let the caller (the model) decide instead of a long silent detour
+                    raise SystemExit(f"blocked: can't get from {s['map']['name']} {w['player']} to "
+                                     f"{W.map_name(p, *nxt)} {list(nxt)}: something is in the way (a story gate, an "
+                                     "object, a one-way ledge). Look at the map, talk to people or explore to open "
+                                     "it, or travel somewhere else.")
                 closed.add(nxt)
                 hops = []
                 continue
