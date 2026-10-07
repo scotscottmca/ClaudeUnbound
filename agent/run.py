@@ -4,7 +4,8 @@
     python agent/run.py                         # resume the current run
     python agent/run.py --fresh --bootstrap-from D:/ClaudeUnboundRuns/gym1   # start with a previous run's memory (#22)
 
-Each chunk is one `claude -p` invocation (resumed with --continue). Per chunk it logs tokens, API-equivalent
+Each chunk is one `claude -p` invocation (resumed with --continue). To change the main (router) model
+mid-run, write a model ID to <workspace>/model.txt; it's read at the start of every chunk. Per chunk it logs tokens, API-equivalent
 cost, model breakdown and the milestone to <workspace>/usage.jsonl (#13), pauses when the usage window
 is exhausted and resumes after the reset, and stops at the goal or the --budget-usd alarm.
 """
@@ -59,7 +60,11 @@ def setup(ws, fresh, bootstrap):
 
 
 def chunk(ws, first):
-    args = [CLAUDE, "-p", FIRST if first else NEXT, "--model", MAIN_MODEL,
+    # Re-read every chunk, so the router model can change mid-run without restarting the runner.
+    override = os.path.join(ws, "model.txt")
+    model = open(override).read().strip() if os.path.exists(override) else MAIN_MODEL
+    print(f"  model: {model}")
+    args = [CLAUDE, "-p", FIRST if first else NEXT, "--model", model,
             "--mcp-config", "mcp.json", "--strict-mcp-config",
             "--agents", open(os.path.join(REPO, "agent", "agents.json"), encoding="utf-8").read(),
             "--allowedTools", *TOOLS, "--output-format", "stream-json", "--verbose"]
