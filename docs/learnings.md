@@ -76,3 +76,4 @@ Failures, their root causes, and the rule each one taught. Read this before buil
 - Messages: printers are per window (shops use their own); a finished message waiting for A shows as script mode 2 parked in a wait-for-button native.
 - Movement: 8 frames a tile while the key is held, plus 8 to turn first. Walking into a sign reads it.
 - Story gates are often invisible objects: active object events with no visible sprite (e.g. graphics 33 on Icicle Cave's mouth). The grid shows them as `N`.
+| 2026-10-08 | Before the gym leader, the Haiku tier opened the start menu to check its bag and spent 10 actions (each with a screenshot) failing to find the Bag icon | Unbound's start menu is an icon bar, not FireRed's text list; the agent didn't know get_state already lists the bag | The player instructions now say the bag is in get_state and the start menu isn't needed to check items |

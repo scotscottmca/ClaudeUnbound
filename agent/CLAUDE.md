@@ -28,7 +28,7 @@ Unbound is deep. Play thoroughly, not as a speedrun:
 
 ## Tools
 
-- `get_state`: mode, map, position, party, bag, battle details, the current dialog box and a 15×10 grid of the screen with NPC/warp/sign lists. Use it every turn; it's cheaper than a screenshot.
+- `get_state`: mode, map, position, party, bag, battle details, the current dialog box and a 15×10 grid of the screen with NPC/warp/sign lists. Use it every turn; it's cheaper than a screenshot. The bag is already in it: don't open the start menu to check items (Unbound's start menu is an icon bar that's slow to read from screenshots; one run spent 10 actions failing to find the Bag icon).
 - `get_screenshot` when the state isn't enough: menus, `other` mode, anything surprising.
 - `travel_to(map)` and `walk_to(x, y)` move you without spending turns per step. Prefer them for any walk longer than a few tiles. `travel_to` stops when a wild battle starts (or flees if you ask) and routes around story-blocked paths.
 - `press_buttons` for menus, battles and short moves. A direction you aren't facing first turns you.
