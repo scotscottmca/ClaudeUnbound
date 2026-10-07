@@ -17,6 +17,7 @@ import time
 import traceback
 
 import bot
+import milestones
 import world as W
 from probe import Probe
 from state import TEXT_PRINTERS, get_state, press, raw
@@ -32,6 +33,7 @@ KEYS = ["A", "B", "START", "SELECT", "UP", "DOWN", "LEFT", "RIGHT", "L", "R"]
 
 p = None
 steps = 0
+tracker = milestones.Tracker(os.path.join(os.path.dirname(LOG), "milestones.jsonl"))
 last_fingerprint, unchanged, watchdog_fired = None, 0, 0
 battle_seen = False
 
@@ -94,7 +96,11 @@ def screenshot():
 
 def view():
     w = W.read_world(p)
-    return {"viewport": W.viewport(w), **{k: w[k] for k in ("npcs", "warps", "signs", "connections")}}
+    out = {"viewport": W.viewport(w), **{k: w[k] for k in ("npcs", "warps", "signs", "connections")}}
+    # Exploration aid: doors and exits leading to maps never visited yet (#15's fog of war, map level).
+    out["unvisited"] = [f"{x['to']} via {('warp at (%d, %d)' % (x['x'], x['y'])) if 'x' in x else x['direction'] + ' edge'}"
+                        for x in w["warps"] + w["connections"] if tuple(x["to_map"]) not in tracker.seen_maps]
+    return out
 
 
 # --- tools ---------------------------------------------------------------------------------
@@ -269,6 +275,11 @@ def call(name, args):
         steps += 1
         s = get_state(p)
         msgs = notes(s)
+        try:
+            for e in tracker.update(s, steps):
+                msgs.append("MILESTONE: " + json.dumps(e, ensure_ascii=False))
+        except Exception as e:  # never let bookkeeping break a tool
+            log({"step": steps, "error": f"milestones: {e!r}"})
         content.append({"type": "text", "text": json.dumps({"now": summary(s), "harness": msgs},
                                                           ensure_ascii=False)})
         log({"step": steps, "tool": name, "args": args, "now": summary(s), "harness": msgs})
