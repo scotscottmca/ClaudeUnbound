@@ -25,6 +25,21 @@ Status: **verified** = values match what's on screen; **plausible** = right shap
 | `Var8000` | 0x020370B8 | plausible | u16 script vars; values change between overworld and NPC dialog |
 | `gNewBS` ptr | 0x0203E038 | plausible | 0x02002D60 in overworld (stale, not NULL), 0x020179B4 in both battles so far (EWRAM heap). Struct layout not checked |
 
+## Bag (#17)
+
+Pockets are arrays of u16 item ID + u16 count, no XOR, in EWRAM:
+
+| Pocket | Address | Slots | Status |
+|---|---|---|---|
+| Items (main) | 0x0203BB20 | 450 | verified: Potion ×1 and Repel ×1 matched the Cube's Items pocket; using the Potion zeroed its slot immediately |
+| Key Items | 0x0203C228 | 75 | verified: Costume Box ×1 (0x708 = 450 × 4 after the main pocket) |
+| Poké Balls | 0x0203C354 | ? (reading 50) | verified contents (Poké Ball ×4); size unknown |
+| TMs, Berries | | | pending: no items yet |
+
+- Found by searching EWRAM for (item, count) pairs seen on the bag screen. Radical Red's 0x0203BB20 was right.
+- Slots aren't compacted until the bag closes: a used-up item leaves a zero slot first.
+- The bag is "Cube V3", the third icon in Unbound's start-menu bar (Pokédex?, Pokémon List, Cube V3, …, trainer card).
+
 ## ROM name tables (#6)
 
 `bridge/tables.py` builds `bridge/names.json` from these, checking each against known names:

@@ -59,6 +59,9 @@ TYPES = {0: "Normal", 1: "Fighting", 2: "Flying", 3: "Poison", 4: "Ground", 5: "
          8: "Steel", 9: "???", 10: "Fire", 11: "Water", 12: "Grass", 13: "Electric", 14: "Psychic", 15: "Ice",
          16: "Dragon", 17: "Dark", 23: "Fairy"}
 MAP_HEADER = 0x02036DFC
+# Bag pockets: (address, slots) of u16 item ID + u16 count (#17). Main and key sizes match the
+# save layout; the ball pocket's size isn't known yet, 50 is a guess that stops short of other data.
+POCKETS = {"items": (0x0203BB20, 450), "key_items": (0x0203C228, 75), "poke_balls": (0x0203C354, 50)}
 SB1_MONEY = 0x290  # u32, plain (SaveBlock2's XOR key is 0 on CFRU)
 SB1_FLAGS = 0xEE0
 FLAG_BADGE01 = 0x820  # vanilla FireRed; unverified on Unbound until the first badge
@@ -113,6 +116,16 @@ def get_state(p):
     flags = p.range(sb1 + SB1_FLAGS + FLAG_BADGE01 // 8, 1)[0]
     s["badges"] = bin(flags).count("1")
     s["money"] = p.read32(sb1 + SB1_MONEY)
+
+    s["bag"] = {}
+    for pocket, (addr, slots) in POCKETS.items():
+        data = p.range(addr, slots * 4)
+        items = {}
+        for i in range(slots):
+            item, qty = struct.unpack("<HH", data[i * 4:i * 4 + 4])
+            if item and qty:
+                items[NAMES["items"][item]] = items.get(NAMES["items"][item], 0) + qty
+        s["bag"][pocket] = items
 
     count = p.read8(PLAYER_PARTY_COUNT)  # SaveBlock1's copy only updates on save
     if count > 6:
