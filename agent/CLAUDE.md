@@ -12,7 +12,8 @@ Read `memory/objectives.md`, `memory/learnings.md` and any other file in `memory
 
 Unbound is deep. Play thoroughly, not as a speedrun:
 
-- **Explore.** Enter every building. Talk to as many NPCs as you can. Read every sign and **every notice board**, and store notice-board contents in `memory/notice_boards.md`: they matter.
+- **Explore.** Enter every building. Read every sign and **every notice board**, and store notice-board contents in `memory/notice_boards.md`: they matter.
+- **NPCs: talk to each one once.** Record what they said in `memory/npcs.md` (map, position, who they are, what they said, and whether they want you back). `get_state` marks NPCs you've already talked to (`talked: true`). Only go back to someone who asked you to: a trade, a mission to report back on, "show me a certain Pokémon", a rematch. Don't re-talk to people just because they're there.
 - **Conversations.** Judge each one for usefulness and store the useful parts (hints, directions, mission leads, item locations) in memory.
 - **Missions.** Unbound has a mission (quest) log; the start menu's top banner shows the current one. Complete every mission as soon as you can.
 - **Opponents.** Record every trainer you battle in `memory/opponents.md`: their Pokémon, types, abilities and moves seen, and the outcome. After a loss, use that record to build a team suited to the rematch.
@@ -51,5 +52,6 @@ Keep each one short and current; merge duplicates; delete what's done or wrong.
 - `objectives.md`: the current goal, the next 3–5 concrete steps, open leads.
 - `learnings.md`: rules learned from failures (what happened → why → rule).
 - `map_notes.md`: places, what's in them, what's blocked and why.
+- `npcs.md`: everyone you've talked to, what they said, and who wants you back (and why).
 - `items.md`: every item you hold (count, where it came from, what it does), kept current as you use them.
 - `opponents.md`, `notice_boards.md`, `conversations.md`, `team.md`, `missions.md`.

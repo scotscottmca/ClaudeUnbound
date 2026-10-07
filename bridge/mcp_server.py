@@ -11,6 +11,7 @@ import contextlib
 import io
 import json
 import os
+import struct
 import sys
 import tempfile
 import time
@@ -35,6 +36,22 @@ KEYS = ["A", "B", "START", "SELECT", "UP", "DOWN", "LEFT", "RIGHT", "L", "R"]
 p = None
 steps = 0
 tracker = milestones.Tracker(os.path.join(os.path.dirname(LOG), "milestones.jsonl"))
+TALKED = os.path.join(os.path.dirname(LOG), "npcs_talked.json")  # "group,num,localId" of NPCs talked to
+talked = set(json.load(open(TALKED))) if os.path.exists(TALKED) else set()
+
+
+def note_talk(s):
+    """A conversation just started: if the player faces an adjacent NPC, remember having talked to it."""
+    w = W.read_world(p)
+    dx, dy = bot.DIRS[s["facing"].upper()] if s.get("facing") else (0, 0)
+    target = (w["player"][0] + dx, w["player"][1] + dy)
+    for n in w["npcs"]:
+        if (n["x"], n["y"]) == target:
+            key = f"{s['map']['group']},{s['map']['num']},{n['id']}"
+            if key not in talked:
+                talked.add(key)
+                with open(TALKED, "w") as f:
+                    json.dump(sorted(talked), f)
 last_fingerprint, unchanged, watchdog_fired = None, 0, 0
 battle_seen = False
 
@@ -98,6 +115,8 @@ def screenshot():
 def view():
     w = W.read_world(p)
     out = {"viewport": W.viewport(w), **{k: w[k] for k in ("npcs", "warps", "signs", "connections")}}
+    g, n = struct.unpack("<bb", p.range(p.read32(0x03005008) + 4, 2))  # SaveBlock1 location: group, num
+    out["npcs"] = [{**x, "talked": f"{g},{n},{x['id']}" in talked} for x in w["npcs"]]
     # Exploration aid: doors and exits leading to maps never visited yet (#15's fog of war, map level).
     out["unvisited"] = [f"{x['to']} via {('warp at (%d, %d)' % (x['x'], x['y'])) if 'x' in x else x['direction'] + ' edge'}"
                         for x in w["warps"] + w["connections"] if tuple(x["to_map"]) not in tracker.seen_maps]
@@ -280,7 +299,9 @@ TOOLS = {
 def call(name, args):
     global steps, p
     fn, _, _, is_action = TOOLS[name]
+    mode_before = None
     try:
+        mode_before = raw(p)["mode"] if is_action else None
         result = fn(args)
     except (ConnectionError, OSError, RuntimeError) as e:
         if "connection" not in repr(e).lower() and not isinstance(e, OSError):
@@ -293,6 +314,11 @@ def call(name, args):
         steps += 1
         s = get_state(p)
         msgs = notes(s)
+        if s["mode"] == "dialog" and mode_before != "dialog":
+            try:
+                note_talk(s)
+            except Exception as e:
+                log({"step": steps, "error": f"note_talk: {e!r}"})
         try:
             for e in tracker.update(s, steps):
                 msgs.append("MILESTONE: " + json.dumps(e, ensure_ascii=False))
