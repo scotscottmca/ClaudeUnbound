@@ -65,6 +65,8 @@ Failures, their root causes, and the rule each one taught. Read this before buil
 
 | 2026-10-07 | PR #80 merged although its test printed an AssertionError (the code was fine; the test left the step counter at 0) | Second time: the commit sat on a new line after the heredoc, so it ran regardless of the test's exit status | Put the commit on the heredoc's opening line (`python - <<'EOF' && git ...`); a test that fails is investigated before anything ships, even when the failure turns out to be the test |
 
+| 2026-10-07 | The agent, stuck on a forced-switch screen, called load_state() unnamed and rolled the run back two hours (three captures lost; recovered from an autosave 14 s earlier) | I had given an irreversible tool a convenient default ("newest savestate") to fix a missing-argument error | Irreversible tools never get defaults: they take explicit arguments and pass the verification gate. Convenience defaults are only for reversible actions |
+
 ## Signals found along the way
 
 - Battle: player controller `gBattlerControllerFuncs[0]` (0x03004FE0) = 0x0802E439 at the action menu, 0x0802EA11 at the move menu. Cursors: action 0x02023FF8 (0 Fight, 1 Cube, 2 Pokémon, 3 Run), move 0x02023FFC.

@@ -7,7 +7,7 @@ press through them.
 """
 import struct
 
-from state import BATTLE_MONS, DISPLAYED_STRING_BATTLE, NAMES, decode, raw
+from state import BATTLE_MONS, DISPLAYED_STRING_BATTLE, NAMES, decode, get_state, raw
 
 CONTROLLERS = 0x03004FE0  # gBattlerControllerFuncs, u32 per battler
 ACTION_MENU, MOVE_MENU = 0x0802E439, 0x0802EA11
@@ -111,3 +111,61 @@ def run(p):
     p.press("A", 4)
     p.step(60)
     return f"chose Run; {_settle(p)}"
+
+
+PARTY_MENU = 0x0203B0A0  # gPartyMenu: +8 menuType/layout bits, +9 cursor slot (verified on the switch screen)
+CB2_BATTLE_PARTY = 0x0811EBA1  # the party screen inside battle (forced or chosen switch)
+
+
+def party_cursor_to(p, target):
+    """Move the party-screen cursor to slot TARGET. Double layout: two columns (0 2 4 | 1 3 5), Cancel 7
+    under the right; single layout: slot 0 on the left, 1-5 down the right."""
+    for _ in range(12):
+        b = p.range(PARTY_MENU, 10)
+        slot, double = b[9], (b[8] >> 4) & 3 == 1
+        if slot == target:
+            return True
+        if double:
+            key = ("RIGHT" if target % 2 else "LEFT") if slot % 2 != target % 2 or slot > 5 else \
+                  ("DOWN" if target > slot else "UP")
+        else:
+            key = "LEFT" if target == 0 else "RIGHT" if slot == 0 else ("DOWN" if target > slot else "UP")
+        p.press(key, 4)
+        p.step(8)
+    return p.read8(PARTY_MENU + 9) == target
+
+
+def switch_to(p, name):
+    """Send NAME in: from the forced "Choose a Pokemon" screen, or from your battle menu (Pokemon)."""
+    party = get_state(p)["party"]
+    slot = next((i for i, m in enumerate(party) if m["name"].lower() == name.lower()), None)
+    if slot is None:
+        raise SystemExit(f"no {name!r} in the party: {[m['name'] for m in party]}")
+    if party[slot]["hp"].startswith("0/"):
+        raise SystemExit(f"{name} has fainted; healthy: {[m['name'] for m in party if not m['hp'].startswith('0/')]}")
+    if p.read32(0x030030F4) != CB2_BATTLE_PARTY:
+        b, menu = wait_for_menu(p)
+        if b is None:
+            raise SystemExit("no battle menu: text or a prompt is waiting, or the battle is over")
+        if menu == MOVE_MENU:
+            p.press("B", 4)
+            p.step(10)
+        if not to_cursor(p, ACTION_CURSOR + b, 2):
+            raise SystemExit("couldn't put the cursor on Pokemon")
+        p.press("A", 4)
+        for _ in range(30):
+            p.step(6)
+            if p.read32(0x030030F4) == CB2_BATTLE_PARTY:
+                break
+        else:
+            raise SystemExit("the party screen didn't open")
+        p.step(20)
+    if not party_cursor_to(p, slot):
+        raise SystemExit(f"couldn't put the cursor on {name}")
+    p.press("A", 4)  # opens Send Out / Shift
+    p.step(30)
+    p.press("A", 4)  # confirm
+    p.step(60)
+    if p.read32(0x030030F4) == CB2_BATTLE_PARTY:
+        raise SystemExit(f"still on the party screen: {name} may already be in battle")
+    return f"sent in {name}; {_settle(p)}"

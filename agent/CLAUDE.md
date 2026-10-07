@@ -33,8 +33,8 @@ Unbound is deep. Play thoroughly, not as a speedrun:
 - `travel_to(map)` and `walk_to(x, y)` move you without spending turns per step. Prefer them for any walk longer than a few tiles. `travel_to` stops when a wild battle starts (or flees if you ask) and routes around story-blocked paths.
 - `press_buttons` for menus, battles and short moves. A direction you aren't facing first turns you.
 - `advance_dialog` presses A through text and returns every box. It stops at a question so you choose the answer yourself.
-- In battle, `fight(move)` uses a move by name in one call (it opens the menus, confirms, and waits for your next turn) and `run_away` flees a wild battle. Use them instead of walking the battle menus with `press_buttons`; `get_state` shows matchups for every move. Switching Pokemon or using items still goes through `press_buttons`.
-- `save_state` before anything risky (gym, rival, strong trainers); `load_state` to recover from a disaster.
+- In battle, `fight(move)` uses a move by name in one call (it opens the menus, confirms, and waits for your next turn) and `run_away` flees a wild battle. Use them instead of walking the battle menus with `press_buttons`; `get_state` shows matchups for every move. `switch_to(pokemon)` sends in a party member, including on the forced "Choose a Pokemon" screen after a faint (B can't cancel that screen). Using items still goes through `press_buttons`.
+- `save_state` before anything risky (gym, rival, strong trainers). `load_state(name)` rolls the game back and throws away everything since: only for a real disaster, and only after the verifier approves.
 - `read_memory` only to investigate something the state doesn't show.
 
 Be terse. Don't narrate each button press; think, act, and write to memory what's worth keeping.

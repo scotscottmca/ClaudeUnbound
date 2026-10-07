@@ -35,6 +35,7 @@ VERIFY_EVERY = 20  # actions between Sonnet verification checks
 VERIFY_GRACE = 3  # actions allowed after a VERIFY note before game actions are blocked
 verify_due = 0  # action number when verification became due (0: none pending)
 last_prompt = None  # irreversible prompt already flagged
+last_verified = -99  # action number of the last recorded verification
 IRREVERSIBLE = ("forget", "forgot", "delete", "make room", "release", "toss", "throw away", "discard", "give up", "overwrite", "stop learning")
 LEARN_EVERY = 40  # actions between self-learning checks (asked for every 25-50 steps)
 STALL_AFTER = 15  # actions with no change in map/position/mode/dialog
@@ -118,6 +119,10 @@ def notes(s):
         last_prompt = text
     else:
         last_prompt = None
+    if raw(p)["cb2"] == hex(battle.CB2_BATTLE_PARTY) and s["mode"] != "battle":
+        alive = [m["name"] for m in s["party"] if not m["hp"].startswith("0/")]
+        out.append(f"FORCED SWITCH: the game is waiting for a replacement and B can't cancel it. Call "
+                   f"switch_to with one of {alive} (not one already in battle).")
     if steps and steps % LEARN_EVERY == 0:
         out.append(f"LEARNING CHECK (action {steps}): review what happened since the last check. Record "
                    "new facts in memory/, add a learnings.md entry for anything that failed or surprised "
@@ -323,13 +328,17 @@ def t_save_state(a):
 
 
 def t_load_state(a):
+    """Rolls the game back: irreversible. Named only, and only right after the verifier approved it
+    (an unnamed default once rolled the run back two hours)."""
+    global verify_due
+    names = sorted(f[:-4] for f in os.listdir(STATES) if f.endswith(".ss1")) if os.path.isdir(STATES) else []
     name = a.get("name")
-    if not name:  # newest one
-        saves = sorted((f for f in os.listdir(STATES) if f.endswith(".ss1")),
-                       key=lambda f: os.path.getmtime(os.path.join(STATES, f))) if os.path.isdir(STATES) else []
-        if not saves:
-            raise ValueError("no savestates yet")
-        name = saves[-1][:-4]
+    if name not in names:
+        raise ValueError(f"name one of your savestates: {names}")
+    if steps - last_verified > 3:
+        verify_due = verify_due or steps
+        return {"result": "NOT LOADED: loading a savestate throws away everything since it was saved. Ask the "
+                          "verifier subagent to approve this rollback, then call load_state again."}
     p.load(os.path.join(STATES, name + ".ss1"))
     p.step(2)
     return {"loaded": name}
@@ -338,6 +347,13 @@ def t_load_state(a):
 def t_fight(a):
     try:
         return {"result": battle.fight(p, a["move"])}
+    except SystemExit as e:
+        return {"result": str(e)}
+
+
+def t_switch_to(a):
+    try:
+        return {"result": battle.switch_to(p, a["pokemon"] if "pokemon" in a else a.get("name", ""))}
     except SystemExit as e:
         return {"result": str(e)}
 
@@ -351,8 +367,8 @@ def t_run_away(a):
 
 def t_record_verification(a):
     """Called by the verifier subagent after checking; clears the verification gate."""
-    global verify_due
-    verify_due = 0
+    global verify_due, last_verified
+    verify_due, last_verified = 0, steps
     log({"step": steps, "verification": a.get("verdict", "")[:500]})
     return {"recorded": True}
 
@@ -404,7 +420,7 @@ TOOLS = {
                      "max_steps": {"type": "integer"}}, ["map"]), True),
     "save_state": (t_save_state, "Save an emulator savestate under a name (for rollback).",
                    S({"name": {"type": "string"}}), False),
-    "load_state": (t_load_state, "Load a savestate saved with save_state (no name: the newest).",
+    "load_state": (t_load_state, "Roll back to a named savestate. Irreversible: needs the verifier's approval first.",
                    S({"name": {"type": "string"}}), True),
     "wiki_search": (t_wiki_search, "Search the local unboundwiki copy. It covers only Pokémon (where to find "
                     "them, types, abilities, evolutions, moves), items and locations (towns, routes, their items, "
@@ -416,6 +432,9 @@ TOOLS = {
               "confirms (default target in double battles), and waits for your next turn. Stops and says so "
               "when text or a prompt (level-up, learning a move) needs you.",
               S({"move": {"type": "string"}}, ["move"]), True),
+    "switch_to": (t_switch_to, "In battle: send in a party member by name, from the forced 'Choose a Pokemon' "
+                  "screen (B can't cancel that one) or from your battle menu.",
+                  S({"pokemon": {"type": "string"}}, ["pokemon"]), True),
     "run_away": (t_run_away, "In a wild battle: choose Run and wait for the result.", S({}), True),
     "record_verification": (t_record_verification, "For the verifier subagent only: record your verdict after "
                             "checking the playing agent. Clears the verification gate.",
