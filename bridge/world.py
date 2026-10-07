@@ -32,10 +32,59 @@ def u32(p, addr):
     return struct.unpack("<I", p.range(addr, 4))[0]
 
 
+def header_of(p, group, num):
+    """ROM map header address, via Unbound's XOR-obfuscated map-group table."""
+    return u32(p, (u32(p, MAP_GROUPS + 4 * group) ^ MAP_GROUPS_KEY) + 4 * num)
+
+
 def map_name(p, group, num):
-    """Name of any map, via the ROM's obfuscated map-group table."""
-    header = u32(p, (u32(p, MAP_GROUPS + 4 * group) ^ MAP_GROUPS_KEY) + 4 * num)
-    return NAMES["mapsecs"][str(p.read8(header + 0x14))]
+    return NAMES["mapsecs"][str(p.read8(header_of(p, group, num) + 0x14))]
+
+
+_links = {}
+
+
+def map_links(p, group, num):
+    """Maps reachable in one hop from (group, num): connections and warps, from the ROM header."""
+    if (group, num) not in _links:
+        header = header_of(p, group, num)
+        events, _, connections = struct.unpack("<III", p.range(header + 4, 12))
+        out = set()
+        n_warp = p.range(events, 4)[1]
+        warp_ptr = u32(p, events + 8)
+        for i in range(n_warp):
+            _, _, _, _, wnum, wgroup = struct.unpack("<hhBBBB", p.range(warp_ptr + 8 * i, 8))
+            if (wgroup, wnum) != (0x7F, 0x7F):  # dynamic warp: destination decided at runtime
+                out.add((wgroup, wnum))
+        if connections:
+            count, ptr = struct.unpack("<iI", p.range(connections, 8))
+            for i in range(count):
+                _, _, _, _, _, cgroup, cnum = struct.unpack("<BBBBiBB", p.range(ptr + 12 * i, 10))
+                out.add((cgroup, cnum))
+        _links[(group, num)] = out
+    return _links[(group, num)]
+
+
+def route(p, start, target_name, closed=(), max_maps=400):
+    """Shortest list of maps from START (group, num) to any map named TARGET_NAME, or None.
+    CLOSED: maps known to be unreachable for now (story gates the ROM can't tell us about)."""
+    prev, queue = {start: None}, [start]
+    while queue and len(prev) < max_maps:
+        here = queue.pop(0)
+        if here != start and map_name(p, *here) == target_name:
+            hops = []
+            while here != start:
+                hops.append(here)
+                here = prev[here]
+            return hops[::-1]
+        links = map_links(p, *here)
+        if len(links) > 20 and here != start:
+            continue  # hub maps (e.g. 4/9 links to every town) aren't walkable shortcuts
+        for nxt in sorted(links):
+            if nxt not in prev and nxt not in closed:
+                prev[nxt] = here
+                queue.append(nxt)
+    return None
 
 
 def read_world(p):
@@ -71,7 +120,8 @@ def read_world(p):
         count, ptr = struct.unpack("<iI", p.range(connections, 8))
         for i in range(count):
             d, _, _, _, offset, group, num = struct.unpack("<BBBBiBB", p.range(ptr + 12 * i, 10))
-            conns.append({"direction": CONNECTION[d], "to": map_name(p, group, num), "offset": offset})
+            conns.append({"direction": CONNECTION[d], "to": map_name(p, group, num), "to_map": [group, num],
+                          "offset": offset})
 
     npcs, player = [], None
     evs = p.range(OBJECT_EVENTS, 16 * 0x24)
