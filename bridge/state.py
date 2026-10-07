@@ -1,8 +1,10 @@
 """One-shot readout of verified Unbound RAM (see docs/addresses.md). Needs probe.lua running.
 
-    python state.py
+    python state.py                              # get_state JSON
     python state.py press UP [FRAMES] [SETTLE]   # traced press
 """
+import json
+import os
 import struct
 import sys
 
@@ -51,61 +53,112 @@ def decode(data):
     return "".join(out)
 
 
-def read_state(p):
-    main = p.range(G_MAIN, 0x8)
-    cb1, cb2 = struct.unpack("<II", main)
+NAMES = json.load(open(os.path.join(os.path.dirname(os.path.abspath(__file__)), "names.json"), encoding="utf-8"))
+# Type IDs in ROM table order (0x08A4EAD4); 18-22 are unused.
+TYPES = {0: "Normal", 1: "Fighting", 2: "Flying", 3: "Poison", 4: "Ground", 5: "Rock", 6: "Bug", 7: "Ghost",
+         8: "Steel", 9: "???", 10: "Fire", 11: "Water", 12: "Grass", 13: "Electric", 14: "Psychic", 15: "Ice",
+         16: "Dragon", 17: "Dark", 23: "Fairy"}
+MAP_HEADER = 0x02036DFC
+SB1_MONEY = 0x290  # u32, plain (SaveBlock2's XOR key is 0 on CFRU)
+SB1_FLAGS = 0xEE0
+FLAG_BADGE01 = 0x820  # vanilla FireRed; unverified on Unbound until the first badge
+
+
+def status_name(st):
+    if st & 7:
+        return f"asleep ({st & 7} turns)"
+    for bit, name in ((7, "badly poisoned"), (3, "poisoned"), (4, "burned"), (5, "frozen"), (6, "paralyzed")):
+        if st & (1 << bit):
+            return name
+    return None
+
+
+def moves(ids, pps):
+    return {NAMES["moves"][m]: pp for m, pp in zip(ids, pps) if m}
+
+
+def current_text(p, printer):
+    """Text of the box printer 0 is on: from the last paragraph break before its cursor
+    to the next one. ponytail: a 0xFB/0xFF inside a control code's argument would cut it short."""
+    cur = struct.unpack("<I", printer[0:4])[0]
+    data = p.range(cur - 0x100, 0x200)
+    end = next((i for i in range(0xFF, 0x200) if data[i] in (0xFB, 0xFF)), 0x200)
+    start = max((i for i in range(0, end) if data[i] in (0xFB, 0xFF)), default=-1) + 1
+    return decode(data[start:end]).strip()  # padding before a buffer decodes as spaces
+
+
+def raw(p):
+    """Fields the mode and press trace are built from."""
+    cb1, cb2 = struct.unpack("<II", p.range(G_MAIN, 8))
+    printer = p.range(TEXT_PRINTERS, 0x24)
+    locked = p.read8(LOCK_FIELD_CONTROLS)
+    mode = ("battle" if cb2 == CB2_BATTLE else "dialog" if printer[0x1B]
+            else "overworld" if cb2 == CB2_OVERWORLD and not locked else "other")
+    return {"cb2": hex(cb2), "locked": locked, "printer": printer, "mode": mode}
+
+
+def get_state(p):
+    r = raw(p)
     sb1 = p.read32(SB1_PTR)
     x, y, group, num = struct.unpack("<hhbb", p.range(sb1, 6))
-    s = {"cb1": hex(cb1), "cb2": hex(cb2), "map": (group, num), "pos": (x, y)}
-
+    mapsec = p.read8(MAP_HEADER + 0x14)
+    s = {"mode": r["mode"], "map": {"group": group, "num": num, "name": NAMES["mapsecs"][str(mapsec)]},
+         "pos": [x, y]}
+    events = p.range(OBJECT_EVENTS, 16 * 0x24)
     for i in range(16):
-        ev = p.range(OBJECT_EVENTS + i * 0x24, 0x24)
+        ev = events[i * 0x24:(i + 1) * 0x24]
         if ev[0] & 1 and ev[8] == 0xFF:
-            s["facing"] = FACING.get(ev[0x18] & 0xF, ev[0x18] & 0xF)
-            s["obj_coords"] = struct.unpack("<hh", ev[0x10:0x14])
+            s["facing"] = FACING[ev[0x18] & 0xF]
             break
+    flags = p.range(sb1 + SB1_FLAGS + FLAG_BADGE01 // 8, 1)[0]
+    s["badges"] = bin(flags).count("1")
+    s["money"] = p.read32(sb1 + SB1_MONEY)
 
-    s["trainer"] = decode(p.range(p.read32(SB2_PTR), 8))
     count = p.read8(PLAYER_PARTY_COUNT)  # SaveBlock1's copy only updates on save
-    party = p.range(PLAYER_PARTY, 100 * min(count, 6))
+    if count > 6:
+        raise ValueError(f"party count {count}")
+    party = p.range(PLAYER_PARTY, 100 * count) if count else b""
     s["party"] = []
-    for i in range(min(count, 6)):
+    for i in range(count):
         m = party[i * 100:(i + 1) * 100]
         species, item = struct.unpack("<HH", m[0x20:0x24])
+        hp, max_hp = struct.unpack("<HH", m[0x56:0x5A])
         s["party"].append({
-            "nick": decode(m[0x08:0x12]), "species": species, "item": item,
-            "level": m[0x54], "hp": struct.unpack("<HH", m[0x56:0x5A]),
-            "moves": struct.unpack("<4H", m[0x2C:0x34]), "pp": tuple(m[0x34:0x38]),
-            "status": struct.unpack("<I", m[0x50:0x54])[0],
+            "name": decode(m[0x08:0x12]), "species": NAMES["species"][species], "level": m[0x54],
+            "hp": f"{hp}/{max_hp}", "status": status_name(struct.unpack("<I", m[0x50:0x54])[0]),
+            "item": NAMES["items"][item] if item else None,
+            "moves": moves(struct.unpack("<4H", m[0x2C:0x34]), m[0x34:0x38]),
         })
 
-    in_battle = cb2 == CB2_BATTLE
-    if in_battle:  # gBattleTypeFlags stays set after battle, so gate on the callback
-        s["battle_flags"] = hex(p.read32(BATTLE_TYPE_FLAGS))
-        s["battlers"] = []
+    if r["mode"] == "battle":  # gBattleTypeFlags stays set after battle, so gate on the callback
+        s["battle"] = {"flags": hex(p.read32(BATTLE_TYPE_FLAGS)), "battlers": []}
         for i in range(4):
             b = p.range(BATTLE_MONS + i * 0x58, 0x58)
+            species = struct.unpack("<H", b[0:2])[0]
+            if not species:
+                continue
             hp, level, _, max_hp = struct.unpack("<HBBH", b[0x28:0x2E])
-            s["battlers"].append({"species": struct.unpack("<H", b[0:2])[0], "level": level, "ability": b[0x20],
-                                  "hp": (hp, max_hp), "nick": decode(b[0x30:0x3B])})
-        s["battle_text"] = decode(p.range(DISPLAYED_STRING_BATTLE, 0x100))
-
-    printer = p.range(TEXT_PRINTERS, 0x24)
-    s["printer0_active"] = printer[0x1B]
-    s["dialog"] = decode(p.range(STRING_VAR4, 0x200))
-    s["locked"] = p.read8(LOCK_FIELD_CONTROLS)
-    s["mode"] = ("battle" if in_battle else "dialog" if printer[0x1B]
-                 else "overworld" if cb2 == CB2_OVERWORLD and not s["locked"] else "other")
+            types = [TYPES[b[0x21]]] + ([TYPES[b[0x22]]] if b[0x22] != b[0x21] else [])
+            s["battle"]["battlers"].append({
+                "side": "player" if i % 2 == 0 else "opponent", "name": decode(b[0x30:0x3B]),
+                "species": NAMES["species"][species], "level": level, "hp": f"{hp}/{max_hp}",
+                "types": types, "ability": NAMES["abilities"][b[0x20]],
+                "status": status_name(struct.unpack("<I", b[0x4C:0x50])[0]),
+                **({"moves": moves(struct.unpack("<4H", b[0x0C:0x14]), b[0x24:0x28])} if i % 2 == 0 else {}),
+            })
+        s["battle"]["text"] = decode(p.range(DISPLAYED_STRING_BATTLE, 0x100))
+    if r["mode"] == "dialog":
+        s["dialog"] = current_text(p, r["printer"])
     return s
 
 
 def _snapshot(p):
     """Small state that changes on anything meaningful. Whole-screen diffs don't work:
     weather and animated tiles change the screen every frame."""
-    s = read_state(p)
-    printer = p.range(TEXT_PRINTERS, 0x24)
-    return {"map": s["map"], "pos": s["pos"], "facing": s.get("facing"), "mode": s["mode"],
-            "cb2": s["cb2"], "locked": s["locked"], "printer": (printer[0x1B], printer[0x1C], printer[0:4].hex())}
+    r, s = raw(p), get_state(p)
+    pr = r["printer"]
+    return {"map": (s["map"]["group"], s["map"]["num"]), "pos": tuple(s["pos"]), "facing": s.get("facing"),
+            "mode": r["mode"], "cb2": r["cb2"], "locked": r["locked"], "printer": (pr[0x1B], pr[0x1C], pr[0:4].hex())}
 
 
 def press(p, key, frames=4, settle=16):
@@ -125,5 +178,4 @@ if __name__ == "__main__":
     if sys.argv[1:2] == ["press"]:
         print(press(p, sys.argv[2], *map(int, sys.argv[3:])))
     else:
-        for k, v in read_state(p).items():
-            print(f"{k:15} {v}")
+        print(json.dumps(get_state(p), ensure_ascii=False, indent=1))

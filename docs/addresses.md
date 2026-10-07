@@ -7,7 +7,7 @@ Status: **verified** = values match what's on screen; **plausible** = right shap
 | Symbol | Address | Status | Evidence |
 |---|---|---|---|
 | `gMain` | 0x030030F0 | verified | callback1 0x08056535 / callback2 0x080565B5 (vanilla `CB1/CB2_Overworld`) in overworld, 0x080123E5 / 0x08011101 (`BattleMainCB2`) in battle, callback2 0x08137EE9 with the summary screen open (callback1 unchanged); `vblankCounter2` (+0x24) advances ~60 per 60 frames; `vblankCounter1` (+0x20) is a pointer, NULL |
-| `gSaveBlock1Ptr` | 0x03005008 | verified | → 0x0202552C. `pos` (+0) changed y 2→4 after walking down 2 tiles; `location` (+4) group/num match the object event; `mapLayoutId` (+0x32) matches `gMapHeader`; `playerPartyCount` (+0x34) is the saved copy, stale until save |
+| `gSaveBlock1Ptr` | 0x03005008 | verified | → 0x0202552C. `pos` (+0) changed y 2→4 after walking down 2 tiles; `location` (+4) group/num match the object event; `mapLayoutId` (+0x32) matches `gMapHeader`; `playerPartyCount` (+0x34) is the saved copy, stale until save. `money` (+0x290) is a plain u32: read 3848, matching the trainer card (SaveBlock2's XOR key at +0xF20 is 0). Flags at +0xEE0; badge flags assumed vanilla 0x820–0x827, all 0 before the first gym (**unverified**) |
 | `gSaveBlock2Ptr` | 0x0300500C | verified | → 0x02024588. `playerName` (+0) decodes "Claude"; play time at +0xE |
 | `gSaveBlock3Ptr` | 0x03005010 | plausible | → 0x02029314 (EWRAM). Contents not checked |
 | `gMapHeader` | 0x02036DFC | verified | layout/events/scripts are ROM pointers (scripts at 0x09E8FD70, Unbound's expanded space); `mapLayoutId` 0x197 = SaveBlock1's; `mapType` 8 (indoor) in an indoor map. Walking to the next map: group/num 4/10 → 4/11 and `mapLayoutId` 0x197 → 0x198 in both SaveBlock1 and `gMapHeader`, with new layout/event pointers |
@@ -35,6 +35,7 @@ Status: **verified** = values match what's on screen; **plausible** = right shap
 | Move names | 0x08A40A10 | 13 bytes each | 923 |
 | Ability names | 0x08A36398 | 17 bytes each | 293 |
 | Items | 0x08876200 | 44-byte item structs, name in the first 14 bytes, item ID at +14 | 729 |
+| Type names | 0x08A4EAD4 | 7 bytes each, abbreviated ("Electr"); vanilla order, 18–22 unused, Fairy = 23. `state.py` spells them out | 24 |
 | Map section names | 0x083F1CAC | u32 pointers, index = mapsec − 0x58 | 109 (0x58–0xC4) |
 
 - A map's name is its map section's name: `gMapHeader` +0x14, e.g. 0x85 Shadow Base, 0x65 Route 1. Indoor maps share their town's section.
