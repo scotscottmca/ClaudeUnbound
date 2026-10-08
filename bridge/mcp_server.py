@@ -22,10 +22,11 @@ import bot
 import battle
 import milestones
 import moves
+import naming
 import wiki
 import world as W
 from probe import Probe
-from state import get_state, press, raw
+from state import G_MAIN, get_state, press, raw
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 RUN = os.path.normpath(os.path.join(HERE, "..", "run"))
@@ -82,6 +83,8 @@ def notes(s):
     """Harness messages appended to every action's result."""
     global last_fingerprint, unchanged, watchdog_fired, battle_seen
     out = []
+    if p.read32(G_MAIN + 4) == naming.NAMING_CB2:
+        out.append("NAMING SCREEN: use type_name(name) to type the name and confirm; don't walk the keyboard.")
     fp = fingerprint(s)
     unchanged = unchanged + 1 if fp == last_fingerprint else 0
     last_fingerprint = fp
@@ -191,6 +194,8 @@ def t_get_state(_):
             s["battle"]["matchups"] = moves.matchups(s)
         except Exception as e:  # hints only: never break get_state
             s["battle"]["matchups"] = f"unavailable: {e!r}"
+    if p.read32(G_MAIN + 4) == naming.NAMING_CB2:
+        s["naming_screen"] = {"typed": naming.text(p), "how": "type_name(name)"}
     return {**s, "map_view": mv}
 
 
@@ -365,6 +370,13 @@ def t_run_away(a):
         return {"result": str(e)}
 
 
+def t_type_name(a):
+    try:
+        return {"typed": naming.type_name(p, a["name"])}
+    except (RuntimeError, ValueError) as e:
+        return {"result": str(e)}
+
+
 def t_record_verification(a):
     """Called by the verifier subagent after checking; clears the verification gate."""
     global verify_due, last_verified
@@ -435,6 +447,9 @@ TOOLS = {
     "switch_to": (t_switch_to, "In battle: send in a party member by name, from the forced 'Choose a Pokemon' "
                   "screen (B can't cancel that one) or from your battle menu.",
                   S({"pokemon": {"type": "string"}}, ["pokemon"]), True),
+    "type_name": (t_type_name, "On a naming screen (nickname, rival): clear the box, type the name (letters "
+                  "and spaces) and confirm. Answer the 'Is this name OK?' question that follows yourself.",
+                  S({"name": {"type": "string"}}, ["name"]), True),
     "run_away": (t_run_away, "In a wild battle: choose Run and wait for the result.", S({}), True),
     "record_verification": (t_record_verification, "For the verifier subagent only: record your verdict after "
                             "checking the playing agent. Clears the verification gate.",

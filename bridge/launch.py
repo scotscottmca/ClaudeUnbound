@@ -29,7 +29,8 @@ def launch(state=None):
     args = [MGBA, "--script", os.path.join(HERE, "probe.lua")]
     if state:
         args += ["-t", os.path.abspath(state)]
-    subprocess.Popen(args + [os.path.join(RUN, "Unbound.gba")])
+    # Through "start" so mGBA has no parent: stopping a runner's process tree mustn't take the emulator with it.
+    subprocess.Popen(["cmd", "/c", "start", "", *args, os.path.join(RUN, "Unbound.gba")])
     for _ in range(30):
         time.sleep(1)
         if serving():

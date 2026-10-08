@@ -40,6 +40,17 @@ Pockets are arrays of u16 item ID + u16 count, no XOR, in EWRAM:
 - Slots aren't compacted until the bag closes: a used-up item leaves a zero slot first.
 - The bag is "Cube V3", the third icon in Unbound's start-menu bar (Pokédex?, Pokémon List, Cube V3, …, trainer card).
 
+## Naming screen
+
+| Name | Address | Status | Evidence |
+|---|---|---|---|
+| naming-screen callback2 | 0x0809FB71 | verified | rival and Beldum nickname screens; changes once OK is confirmed |
+| `sNamingScreen->textBuffer` | 0x02004560 | verified | 0xFF → 0xBB ('A') on typing; `naming.py` read back "Copilot" / "Iron Man" |
+| current page | 0x02004B82 | verified | 2 lower, 0 others, 1 upper; SELECT cycles 2→0→1, ~20 frames per switch |
+| cursor x / y | 0x0202066A / 0x0202066C | verified | `gSprites[0].data[0..1]`; RIGHT RIGHT DOWN LEFT diffed 0→1→2→2→1 / 0→0→0→1→1. x 8 is the button column (page, Back, OK) |
+
+- Lower/upper pages match FireRed's grid (`abcdef .` / `ghijkl ,` / `mnopqrs ` / `tuvwxyz `), mapped by typing each key and reading the buffer. Typing a capital switches to lower case automatically.
+
 ## ROM name tables (#6)
 
 `bridge/tables.py` builds `bridge/names.json` from these, checking each against known names:
