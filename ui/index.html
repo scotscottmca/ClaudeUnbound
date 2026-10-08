@@ -76,18 +76,20 @@ h2 .note { text-transform: none; letter-spacing: 0; font-weight: 400; color: var
 #stats > div { display: flex; flex-direction: column; gap: 2px; min-width: 0; padding: 9px 12px 10px;
   background: var(--tile); border-radius: 8px; }
 #stats .k { color: var(--dim); font-size: 10.5px; text-transform: uppercase; letter-spacing: .08em; }
-#stats b { font-weight: 600; font-size: 17px; line-height: 1.35; padding-bottom: .1em; overflow: hidden; overflow-wrap: anywhere;
+#stats b { font-weight: 600; font-size: 15px; line-height: 1.35; padding-bottom: .1em; overflow: hidden; overflow-wrap: anywhere;
   display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; }  /* wrap long values, e.g. a map name */
 #stats .sm { color: var(--faint); font: 11px/1.4 var(--mono); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+#stats > div:first-child b { display: block; font-size: 14px; white-space: nowrap; text-overflow: ellipsis; }  /* location: one line, full name on hover */
 #stats .badge { width: 11px; height: 11px; margin: 0 3px 3px 0; }
 .badge { display: inline-block; width: 11px; height: 11px; border-radius: 50%; border: 1.5px solid var(--faint); margin-right: 3px; vertical-align: -1px; }
 .badge.on { background: var(--write); border-color: var(--write); }
 
 /* party */
-#foe:empty { display: none; }
 #foe { display: grid; grid-template-columns: auto 1fr 70px; gap: 12px; align-items: center; margin: 0 16px 10px; padding: 8px 12px;
   border-radius: 8px; background: #2a1719; box-shadow: inset 3px 0 var(--bad); font-size: 13.5px; }
 #foe .nm { color: var(--bad); font-weight: 600; } #foe .sp { color: var(--dim); }
+#foe { min-height: 38px; box-sizing: border-box; }  /* always shown, so the party doesn't jump when a battle starts or ends */
+#foe.idle { display: flex; background: var(--tile); box-shadow: inset 3px 0 var(--line); color: var(--faint); }
 #mons { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px; padding: 0 16px 14px; }
 .mon { display: flex; flex-direction: column; gap: 5px; padding: 9px 12px 10px; border-radius: 8px; background: var(--tile); min-width: 0; }
 .mon .l1 { display: flex; align-items: baseline; gap: 6px; min-width: 0; }
@@ -154,7 +156,7 @@ h2 .note { text-transform: none; letter-spacing: 0; font-weight: 400; color: var
       <div class="scroll" id="feed"></div>
     </section>
     <section id="router">
-      <h2>Model router <span class="note" id="runcost" title="estimated: every finished chunk and harness call (watcher, verifier, curator); the running chunk is added when it ends">-</span></h2>
+      <h2>Model router <span class="note" id="runcost" title="estimated: every finished chunk and harness call (watcher, verifier); the running chunk is added when it ends">-</span></h2>
       <svg viewBox="0 0 516 168" preserveAspectRatio="xMidYMid meet">
         <text class="glabel" x="4" y="10">harness</text><text class="glabel" x="512" y="10" text-anchor="end">subagents</text>
         <g id="edges"></g><g id="nodes"></g><g id="pulses"></g>
@@ -204,13 +206,13 @@ function div(cls, html) { const d = document.createElement("div"); d.className =
 /* ---------- router */
 const AG = {
   main: {x: 196, y: 71, label: "Haiku 5.5", sub: "main", color: "--main"},
-  watcher: {x: 4, y: 20, label: "Haiku 5.5", sub: "watcher", color: "--main"},
-  verifier: {x: 4, y: 71, label: "Sonnet 5.5", sub: "verifier", color: "--sonnet"},
-  curator: {x: 4, y: 122, label: "Sonnet 5.5", sub: "curator", color: "--sonnet"},
+  watcher: {x: 4, y: 40, label: "Haiku 5.5", sub: "watcher", color: "--main"},
+  verifier: {x: 4, y: 102, label: "Sonnet 5.5", sub: "verifier", color: "--sonnet"},
   strategist: {x: 388, y: 20, label: "Opus 5.5", sub: "strategist", color: "--opus"},
   refiner: {x: 388, y: 71, label: "Opus 5.5", sub: "refiner", color: "--opus"},
   expert: {x: 388, y: 122, label: "Fable 5.1", sub: "expert", color: "--fable"},
 };
+const RETIRED = new Set(["curator"]);  // harness models no longer run (#140): their old calls in a log are skipped
 const W = 124, H = 42, spawnN = {}, edgeTimers = {};
 const NS = "http://www.w3.org/2000/svg";
 const svgEl = (tag, attrs, parent) => { const e = document.createElementNS(NS, tag); for (const k in attrs) e.setAttribute(k, attrs[k]); parent && parent.appendChild(e); return e; };
@@ -234,6 +236,7 @@ function hot(k, color) {
   clearTimeout(r._t); r._t = setTimeout(() => { r.style.stroke = css(AG[k].color) + "55"; document.getElementById("n-" + k).classList.remove("hot"); }, 1600);
 }
 function pulse(agent, back) {
+  if (RETIRED.has(agent)) return;
   if (!AG[agent]) agent = "strategist";
   const color = css(AG[agent].color);
   const c = svgEl("circle", {r: 5, fill: color, style: `filter:drop-shadow(0 0 5px ${color})`}, $("pulses"));
@@ -251,6 +254,7 @@ function settle(agent, after = 0) {
 }
 const trailRows = {};
 function onSpawn(ev, quiet) {
+  if (RETIRED.has(ev.agent)) return;
   const a = AG[ev.agent] ? ev.agent : "strategist";
   spawnN[a] = (spawnN[a] || 0) + 1;
   $("s-" + a).textContent = `${AG[a].sub} · ×${spawnN[a]}`;
@@ -301,7 +305,8 @@ function drawStats() {
     cell("Run time", r && r.first ? dur(r.last - r.first) : "-", r ? `${r.actions.toLocaleString()} agent actions` : "") +
     cell("Cost", r ? "$" + r.cost.toFixed(2) : "-", r ? `${r.costed}/${r.chunks} chunks reported` : "") +
     cell("Output tokens", r ? Object.values(r.tokens).reduce((a, b) => a + b, 0).toLocaleString() : "-", tok);
-  $("stats").lastElementChild.title = tok;  // the per-model split can be longer than the tile
+  $("stats").lastElementChild.title = tok;
+  $("stats").querySelector("b").title = map || "";  // the per-model split can be longer than the tile
 }
 function onParty(s) {
   if (!s) return;
@@ -317,7 +322,8 @@ function onParty(s) {
   $("src").className = "tag" + (s.src === "bridge" ? " live" : "");
   let html = "";
   const foes = (s.battle?.battlers || []).filter(b => b.side === "opponent");
-  $("foe").innerHTML = foes.map(f => `<div><span class="nm">Foe ${esc(f.name)}</span> <span class="sp">${f.species !== f.name ? esc(f.species) + " " : ""}Lv${f.level} · ${esc((f.types || []).join("/"))}</span>${f.status ? `<span class="st">${esc(f.status)}</span>` : ""}</div>${hpbar(f.hp)}<div class="hp">${esc(f.hp)}</div>`).join("");
+  $("foe").classList.toggle("idle", !foes.length);
+  $("foe").innerHTML = !foes.length ? "No battle" : foes.map(f => `<div><span class="nm">Foe ${esc(f.name)}</span> <span class="sp">${f.species !== f.name ? esc(f.species) + " " : ""}Lv${f.level} · ${esc((f.types || []).join("/"))}</span>${f.status ? `<span class="st">${esc(f.status)}</span>` : ""}</div>${hpbar(f.hp)}<div class="hp">${esc(f.hp)}</div>`).join("");
   const lead = (s.party || []).findIndex(p => +String(p.hp).split("/")[0] > 0);
   (s.party || []).forEach((p, i) => {
     const sp = p.species ? `${esc(p.species)}${p.level ? " Lv" + p.level : ""}` : "";
