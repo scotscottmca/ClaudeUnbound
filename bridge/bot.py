@@ -153,6 +153,10 @@ def exit_to(w, target):
                    [(w["width"] - 1 if dx > 0 else 0, y) for y in range(w["height"])]
             return set(edge), key
     warps = {(wp["x"], wp["y"]) for wp in w["warps"] if wp["to_map"] == list(target)}
+    # A wide exit mat can list a warp event per tile while only one has a warp behavior: Dresco Town
+    # (7,4) has events at (7..9,18) but only (8,18) is a south arrow (0x65); the others are plain floor.
+    live = {t for t in warps if w["tile"](*t)[0] in W.WARP}
+    warps = live or warps
     if warps:
         return warps, None
     raise SystemExit(f"no connection or warp to {target!r} from here")
@@ -322,6 +326,13 @@ def go(p, target, reroute=True):
         if final:
             crossed = (here, tuple(w["player"]), key)
         t = press(p, key)
+        if not final and not t["moved"] and t["after"]["mode"] == "other" and t["after"]["locked"]:
+            # An arrow warp locks the field and fades out without moving you, and press() returns
+            # mid-fade. Wait for the warp to finish instead of reading the lock as a script.
+            for _ in range(20):
+                p.step(10)
+                if raw(p)["mode"] != "other":
+                    break
         print(f"{step}: {s['map']['name']} {w['player']} {key} -> {t['after']['pos']} {t['changed']}")
         if t["moved"] and path:
             path.pop(0)
