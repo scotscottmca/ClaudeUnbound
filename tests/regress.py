@@ -497,12 +497,16 @@ def sneak_to_gym_crossing():
 @case(emu=False)
 def sneak_to_gym_unloaded_guard():
     # #130: guard 8 isn't in RAM until the player is near its start (8,27), so live reads can't see it. Its template
-    # stands in for it: its whole patrol counts as watched, so the tool won't start a crossing into it, and says why.
+    # stands in for it. A back-and-forth walker patrols one side of its start (x 1..8 for guard 8, seen live only
+    # there), so it doesn't block the crossing to (13,28): the tool crosses safely past guard 7. Further west, where
+    # the patrols meet, it waits on a safe tile rather than walk into either guard.
     for g7, g8 in (((18, 27, "left"), (8, 27, "left")), ((12, 27, "right"), (5, 27, "left"))):
         game, templates = gym((20, 22), g7, g8)
         err, out = sneak_with(game, (13, 28), templates)
-        assert err and "id 8 (off screen" in err and not game.caught, (err, out[-800:])
-        assert not [pos for _, pos, _ in game.log if pos[1] == 27 and pos[0] <= 16], out[-800:]
+        assert not game.caught and (err is None and game.pos == (13, 28)), (err, out[-800:])
+        game, templates = gym((20, 22), g7, g8)
+        err, out = sneak_with(game, (5, 28), templates)
+        assert not game.caught and err and "a safe tile" in err, (err, out[-800:])
 
 
 @case(emu=False)

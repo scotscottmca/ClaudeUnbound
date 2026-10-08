@@ -301,10 +301,16 @@ def reach(w, n):
     """Tiles watcher template N (a rom_world object) may stand on: the open tiles its movement range lets it walk to
     from its starting position (range: x in the low nibble, y in the high)."""
     rx, ry = n["range"] & 0xF, n["range"] >> 4
+    # A back-and-forth walker patrols one side of its start only, the way it sets off (start - range .. start for
+    # 0x1B): guard 8 (8,27) range 7 was only ever seen at x 1..8, never east of its start. start +- range made an
+    # unloaded guard 8 claim x 1..15 and block the gym's crossing (#130).
+    side = SET_OFF.get(n.get("movement"))
+    lo_x, hi_x = (n["x"] - rx, n["x"]) if side == "left" else (n["x"], n["x"] + rx) if side == "right" else (n["x"] - rx, n["x"] + rx)
+    lo_y, hi_y = (n["y"] - ry, n["y"]) if side == "up" else (n["y"], n["y"] + ry) if side == "down" else (n["y"] - ry, n["y"] + ry)
     spots, todo = set(), [(n["x"], n["y"])]
     while todo:
         t = todo.pop()
-        if t in spots or abs(t[0] - n["x"]) > rx or abs(t[1] - n["y"]) > ry:
+        if t in spots or not (lo_x <= t[0] <= hi_x and lo_y <= t[1] <= hi_y):
             continue
         if spots and (not (0 <= t[0] < w["width"] and 0 <= t[1] < w["height"]) or w["tile"](*t)[1]):
             continue
