@@ -1,0 +1,362 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Unbound Spectator</title>
+<script src="https://cdn.jsdelivr.net/npm/vis-network@9.1.9/standalone/umd/vis-network.min.js"></script>
+<style>
+:root {
+  --bg: #0d1117; --panel: #151b23; --line: #262f3b; --text: #d6dde6; --dim: #7d8895; --faint: #4a5562;
+  --main: #6cb6ff; --sonnet: #c9a0ff; --opus: #ff9e64; --fable: #7ee0b5;
+  --read: #39c5cf; --write: #f2cc60; --good: #56d364; --warn: #e3b341; --bad: #f47067;
+  --mono: ui-monospace, "Cascadia Mono", Consolas, monospace;
+}
+* { box-sizing: border-box; }
+html, body { margin: 0; height: 100%; background: var(--bg); color: var(--text);
+  font: 13px/1.45 system-ui, "Segoe UI", sans-serif; overflow: hidden; }
+header { height: 40px; display: flex; align-items: center; gap: 18px; padding: 0 14px;
+  border-bottom: 1px solid var(--line); white-space: nowrap; }
+header b { font-size: 14px; letter-spacing: .02em; }
+header .k { color: var(--dim); margin-right: 4px; }
+header .grow { flex: 1; }
+.tag { font: 11px var(--mono); padding: 1px 7px; border-radius: 9px; border: 1px solid var(--line); color: var(--dim); }
+.tag.live { color: var(--good); border-color: #2e5f38; }
+select { background: var(--panel); color: var(--text); border: 1px solid var(--line); border-radius: 4px; font: inherit; }
+main { height: calc(100% - 40px); display: grid; grid-template-rows: minmax(0, 1fr) 124px 40%; }
+.row { display: grid; grid-template-columns: minmax(340px, 42%) 1fr; min-height: 0; }
+.row.bottom { grid-template-columns: 1fr 1fr; }
+section { border-right: 1px solid var(--line); border-bottom: 1px solid var(--line); display: flex;
+  flex-direction: column; min-width: 0; min-height: 0; position: relative; }
+h2 { margin: 0; padding: 7px 12px; font-size: 11px; font-weight: 600; text-transform: uppercase;
+  letter-spacing: .08em; color: var(--dim); display: flex; gap: 8px; align-items: center; }
+h2 .note { text-transform: none; letter-spacing: 0; font-weight: 400; color: var(--faint); }
+.scroll { overflow-y: auto; flex: 1; padding: 0 12px 10px; }
+.scroll::-webkit-scrollbar { width: 8px; } .scroll::-webkit-scrollbar-thumb { background: var(--line); border-radius: 4px; }
+
+/* reasoning */
+#feed .txt { margin: 8px 0; white-space: pre-wrap; }
+#feed .tool { font: 12px var(--mono); color: var(--dim); margin: 2px 0; padding-left: 10px; border-left: 2px solid var(--line); }
+#feed .tool .n { color: #a5b4c4; }
+#feed .tool .r { color: var(--good); } #feed .tool .r.err { color: var(--bad); }
+#feed .spawn { font: 12px var(--mono); margin: 4px 0; padding-left: 10px; border-left: 2px solid var(--sonnet); color: var(--sonnet); }
+.time { color: var(--faint); font: 10px var(--mono); margin-right: 6px; }
+#paused { display: none; color: var(--warn); }
+
+/* router */
+#router svg { width: 100%; flex: 1; min-height: 0; padding: 0 8px; }
+.node rect { fill: #1b232d; stroke: var(--line); stroke-width: 1.5; transition: stroke .2s, fill .2s; }
+.node text { fill: var(--text); font-size: 14px; font-weight: 600; } .node .sub { fill: var(--dim); font-size: 11px; font-weight: 400; }
+.node.hot rect { fill: #232c39; }
+.edge { fill: none; stroke: #2a3441; stroke-width: 2; transition: stroke .3s; }
+.edge.active { stroke-dasharray: 5 4; animation: dash 1s linear infinite; }
+@keyframes dash { to { stroke-dashoffset: -18; } }
+.elabel { font: 10px var(--mono); fill: var(--warn); transition: opacity 1s; }
+#counts { display: flex; gap: 14px; padding: 2px 12px 4px; font: 12px var(--mono); color: var(--dim); flex-wrap: wrap; }
+#counts span b { font-weight: 600; }
+#trail { font: 12px/1.5 var(--mono); padding: 0 12px 8px; height: 92px; overflow: hidden; }
+#trail div { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; color: var(--dim); }
+#trail .trig { color: var(--warn); } #trail .back { color: var(--good); }
+
+/* party */
+#hdr2 { display: flex; gap: 14px; padding: 0 12px 6px; color: var(--dim); font-size: 12px; flex-wrap: wrap; }
+#hdr2 b { color: var(--text); font-weight: 500; }
+#mons { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; align-content: start; padding-top: 2px; }
+.mon { display: grid; grid-template-columns: 1fr auto; gap: 4px 10px; padding: 9px 12px; border: 1px solid var(--line);
+  border-radius: 8px; background: var(--panel); align-items: center; }
+.mon .nm { font-weight: 600; font-size: 16px; } .mon .sp { color: var(--dim); font-size: 13px; font-weight: 400; }
+.mon.lead { border-color: #2b4a6b; }
+.bar { height: 9px; background: #222b36; border-radius: 3px; overflow: hidden; }
+.bar i { display: block; height: 100%; transition: width .5s, background .5s; }
+.hp { font: 13px var(--mono); color: var(--dim); text-align: right; }
+.st { font: 10px var(--mono); padding: 0 5px; border-radius: 3px; background: #3a2a1e; color: var(--opus); margin-left: 6px; }
+.mon.lead .nm::before { content: "▸ "; color: var(--main); }
+.foe { grid-column: 1 / 3; border-color: #5a2f2f; background: #1d1517; }
+.foe .nm { color: var(--bad); }
+
+/* memory */
+#graph { flex: 1; min-height: 0; }
+#legend { position: absolute; left: 12px; bottom: 8px; font: 10px var(--mono); color: var(--dim); display: flex; gap: 10px; pointer-events: none; }
+#legend i { display: inline-block; width: 8px; height: 8px; border-radius: 50%; margin-right: 4px; vertical-align: -1px; }
+#toasts { position: absolute; right: 12px; top: 34px; width: 340px; display: flex; flex-direction: column; gap: 8px; pointer-events: none; }
+.toast { background: #1f2a1f; border: 1px solid #2e5f38; border-left: 3px solid var(--good); border-radius: 6px;
+  padding: 8px 10px; box-shadow: 0 6px 20px #0008; animation: pop .35s ease-out; transition: opacity .6s, transform .6s; }
+.toast .h { font: 10px var(--mono); color: var(--good); text-transform: uppercase; letter-spacing: .06em; margin-bottom: 2px; }
+.toast.out { opacity: 0; transform: translateX(30px); }
+@keyframes pop { from { opacity: 0; transform: translateY(-10px) scale(.97); } }
+
+/* learnings */
+#learns { display: flex; gap: 10px; overflow-x: auto; overflow-y: hidden; padding: 0 12px 10px; flex: 1; }
+#learns::-webkit-scrollbar { height: 8px; } #learns::-webkit-scrollbar-thumb { background: var(--line); border-radius: 4px; }
+#learn .item { flex: 0 0 330px; padding: 6px 10px; border: 1px solid var(--line); border-radius: 6px; background: var(--panel);
+  font-size: 12px; overflow: hidden; display: -webkit-box; -webkit-line-clamp: 4; -webkit-box-orient: vertical; }
+#learn .meta { font: 10px var(--mono); color: var(--faint); }
+#learn .item.new { animation: glow 3s ease-out; }
+@keyframes glow { from { background: #1f3322; } }
+</style>
+</head>
+<body>
+<header>
+  <b>Unbound Spectator</b>
+  <span id="mode" class="tag">connecting</span>
+  <span id="speedbox" hidden><span class="k">speed</span><select id="speed">
+    <option>1</option><option>5</option><option>20</option><option>60</option><option>200</option></select></span>
+  <span class="grow"></span>
+  <span><span class="k">map</span><b id="map">-</b> <span id="pos" class="k"></span></span>
+  <span><span class="k">badges</span><b id="badges">-</b></span>
+  <span><span class="k">money</span><b id="money">-</b></span>
+  <span id="gmode" class="tag">-</span>
+  <span id="src" class="tag">-</span>
+</header>
+<main>
+  <div class="row">
+    <section id="reason">
+      <h2>Claude's reasoning <span class="note">main agent</span><span id="paused">paused</span></h2>
+      <div class="scroll" id="feed"></div>
+    </section>
+    <section id="memory">
+      <h2>Memory map <span class="note" id="gstats"></span></h2>
+      <div id="graph"></div>
+      <div id="legend"></div>
+      <div id="toasts"></div>
+    </section>
+  </div>
+  <section id="learn">
+    <h2>Learned something new <span class="note" id="lcount"></span></h2>
+    <div id="learns"></div>
+  </section>
+  <div class="row bottom">
+    <section id="router">
+      <h2>Model router</h2>
+      <svg viewBox="0 0 420 200" preserveAspectRatio="xMidYMid meet">
+        <g id="edges"></g><g id="nodes"></g><g id="pulses"></g>
+      </svg>
+      <div id="counts"></div>
+      <div id="trail"></div>
+    </section>
+    <section id="party">
+      <h2>Party <span class="note" id="partyage"></span></h2>
+      <div class="scroll" id="mons"></div>
+    </section>
+  </div>
+</main>
+<script>
+const $ = id => document.getElementById(id);
+const esc = s => String(s ?? "").replace(/[&<>"]/g, c => ({"&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;"}[c]));
+const hhmm = t => t ? new Date(t * 1000).toLocaleTimeString([], {hour: "2-digit", minute: "2-digit", second: "2-digit"}) : "";
+const css = v => getComputedStyle(document.documentElement).getPropertyValue(v).trim();
+
+/* ---------- reasoning */
+const feed = $("feed"); let hover = false; const toolRows = {};
+feed.addEventListener("mouseenter", () => { hover = true; $("paused").style.display = "inline"; });
+feed.addEventListener("mouseleave", () => { hover = false; $("paused").style.display = "none"; feed.scrollTop = feed.scrollHeight; });
+function add(el) {
+  feed.appendChild(el);
+  while (feed.childElementCount > 600) feed.firstElementChild.remove();
+  if (!hover) feed.scrollTop = feed.scrollHeight;
+}
+function div(cls, html) { const d = document.createElement("div"); d.className = cls; d.innerHTML = html; return d; }
+
+/* ---------- router */
+const AG = {
+  main: {x: 14, y: 76, label: "Haiku 5.5", sub: "main", color: "--main"},
+  verifier: {x: 270, y: 4, label: "Sonnet 5.5", sub: "verifier", color: "--sonnet"},
+  strategist: {x: 270, y: 54, label: "Opus 5.5", sub: "strategist", color: "--opus"},
+  refiner: {x: 270, y: 104, label: "Opus 5.5", sub: "refiner", color: "--opus"},
+  expert: {x: 270, y: 154, label: "Fable 5.1", sub: "expert", color: "--fable"},
+};
+const W = 136, H = 42, spawnN = {}, edgeTimers = {};
+const NS = "http://www.w3.org/2000/svg";
+const svgEl = (tag, attrs, parent) => { const e = document.createElementNS(NS, tag); for (const k in attrs) e.setAttribute(k, attrs[k]); parent && parent.appendChild(e); return e; };
+function edgePath(a) {
+  const m = AG.main, s = AG[a], x1 = m.x + W, y1 = m.y + H / 2, x2 = s.x, y2 = s.y + H / 2;
+  return `M${x1},${y1} C${x1 + 60},${y1} ${x2 - 60},${y2} ${x2},${y2}`;
+}
+for (const [k, a] of Object.entries(AG)) {
+  const g = svgEl("g", {class: "node", id: "n-" + k}, $("nodes"));
+  svgEl("rect", {x: a.x, y: a.y, width: W, height: H, rx: 8, style: `stroke:${css(a.color)}55`}, g);
+  svgEl("text", {x: a.x + 10, y: a.y + 18}, g).textContent = a.label;
+  const sub = svgEl("text", {x: a.x + 10, y: a.y + 33, class: "sub", id: "s-" + k}, g); sub.textContent = a.sub;
+  if (k !== "main") {
+    svgEl("path", {d: edgePath(k), class: "edge", id: "e-" + k}, $("edges"));
+    svgEl("text", {x: a.x - 84, y: a.y + H / 2 - 5, class: "elabel", id: "l-" + k, opacity: 0}, $("edges"));
+  }
+}
+function hot(k, color) {
+  const r = document.querySelector(`#n-${k} rect`); if (!r) return;
+  r.style.stroke = color; document.getElementById("n-" + k).classList.add("hot");
+  clearTimeout(r._t); r._t = setTimeout(() => { r.style.stroke = css(AG[k].color) + "55"; document.getElementById("n-" + k).classList.remove("hot"); }, 1600);
+}
+function pulse(agent, back) {
+  if (!AG[agent]) agent = "strategist";
+  const color = css(AG[agent].color);
+  const c = svgEl("circle", {r: 5, fill: color, style: `filter:drop-shadow(0 0 5px ${color})`}, $("pulses"));
+  const am = svgEl("animateMotion", {dur: "0.9s", fill: "freeze", path: edgePath(agent), ...(back ? {keyPoints: "1;0", keyTimes: "0;1", calcMode: "linear"} : {})}, c);
+  am.beginElement(); setTimeout(() => c.remove(), 1000);
+  setTimeout(() => hot(back ? "main" : agent, color), 850);
+  const e = $("e-" + agent);
+  e.style.stroke = color;
+  clearTimeout(edgeTimers[agent]);
+  if (!back) { e.classList.add("active"); edgeTimers[agent] = setTimeout(() => settle(agent), 90000); }
+  else settle(agent, 2500);
+}
+function settle(agent, after = 0) {
+  setTimeout(() => { const e = $("e-" + agent); e.classList.remove("active"); e.style.stroke = ""; }, after);
+}
+const trailRows = {};
+function onSpawn(ev, quiet) {
+  const a = AG[ev.agent] ? ev.agent : "strategist";
+  spawnN[a] = (spawnN[a] || 0) + 1;
+  $("s-" + a).textContent = `${AG[a].sub} · ×${spawnN[a]}`;
+  const row = div("", `<span class="time">${hhmm(ev.t)}</span><span class="trig">${esc(ev.trigger)}</span> → ${esc(ev.agent)}: ${esc(ev.desc)}`);
+  trailRows[ev.id] = row; $("trail").prepend(row);
+  while ($("trail").childElementCount > 6) $("trail").lastElementChild.remove();
+  add(div("spawn", `<span class="time">${hhmm(ev.t)}</span>⇢ ${esc(ev.agent)} <span style="color:var(--warn)">[${esc(ev.trigger)}]</span> ${esc(ev.desc)}`));
+  if (quiet) return;
+  pulse(a, false);
+  const l = $("l-" + a); l.textContent = ev.trigger; l.setAttribute("opacity", 1);
+  clearTimeout(l._t); l._t = setTimeout(() => l.setAttribute("opacity", 0), 6000);
+}
+function onReturn(ev, quiet) {
+  const row = trailRows[ev.id];
+  if (row) row.innerHTML += ` <span class="back">← ${esc(ev.text)}</span>`;
+  add(div("spawn", `<span class="time">${hhmm(ev.t)}</span>⇠ ${esc(ev.agent)}: ${esc(ev.text)}`));
+  if (!quiet) pulse(ev.agent, true);
+}
+const MODEL = {haiku: "--main", sonnet: "--sonnet", opus: "--opus", fable: "--fable"};
+function onCounts(c) {
+  $("counts").innerHTML = Object.entries(c).sort((a, b) => b[1] - a[1]).map(([m, n]) => {
+    const fam = Object.keys(MODEL).find(f => m.includes(f));
+    const name = m.replace(/^claude-/, "").replace(/-(\d+)-(\d+)$/, " $1.$2");
+    return `<span style="color:${fam ? css(MODEL[fam]) : "inherit"}">${esc(name)} <b>${n}</b></span>`;
+  }).join("") + `<span>msgs</span>`;
+}
+
+/* ---------- party */
+function hpbar(hp) {
+  const [a, b] = String(hp || "0/0").split("/").map(Number), f = b ? a / b : 0;
+  const col = f > .5 ? "--good" : f > .2 ? "--warn" : "--bad";
+  return `<div class="bar"><i style="width:${(f * 100).toFixed(0)}%;background:var(${col})"></i></div>`;
+}
+let partyT = 0;
+function onParty(s) {
+  if (!s) return;
+  partyT = s.src === "bridge" ? 0 : s.t;
+  $("partyage").textContent = s.src === "bridge" ? "live, read-only bridge" : "";
+  const map = s.map && typeof s.map === "object" ? s.map.name : s.map;
+  $("map").textContent = map || "-"; $("pos").textContent = s.pos ? `(${s.pos.join(", ")})` : "";
+  $("badges").textContent = s.badges ?? "-"; $("money").textContent = s.money != null ? "₽" + s.money.toLocaleString() : "-";
+  $("gmode").textContent = s.mode || "-";
+  $("src").textContent = s.src === "bridge" ? "bridge :live" : "log.jsonl";
+  $("src").className = "tag" + (s.src === "bridge" ? " live" : "");
+  let html = "";
+  const foes = (s.battle?.battlers || []).filter(b => b.side === "opponent");
+  for (const f of foes) html += `<div class="foe mon"><div><span class="nm">${esc(f.name)}</span> <span class="sp">${f.species !== f.name ? esc(f.species) + " " : ""}Lv${f.level} · ${esc((f.types || []).join("/"))}</span>${f.status ? `<span class="st">${esc(f.status)}</span>` : ""}</div><div class="hp">${esc(f.hp)}</div><div style="grid-column:1/3">${hpbar(f.hp)}</div></div>`;
+  const lead = (s.party || []).findIndex(p => +String(p.hp).split("/")[0] > 0);
+  (s.party || []).forEach((p, i) => {
+    const sp = p.species ? `${esc(p.species)}${p.level ? " Lv" + p.level : ""}` : "";
+    html += `<div class="mon${i === lead ? " lead" : ""}"><div><span class="nm">${esc(p.name)}</span> <span class="sp">${p.species !== p.name ? sp : (p.level ? "Lv" + p.level : "")}</span>${p.status ? `<span class="st">${esc(p.status)}</span>` : ""}</div><div class="hp">${esc(p.hp)}</div><div style="grid-column:1/3">${hpbar(p.hp)}</div></div>`;
+  });
+  $("mons").innerHTML = html || `<div style="color:var(--faint);padding:8px 0">no party data yet</div>`;
+}
+setInterval(() => { if (partyT) $("partyage").textContent = `updated ${Math.max(0, Math.round(Date.now() / 1000 - partyT))}s ago`; }, 1000);
+
+/* ---------- memory graph */
+const TYPE = {file: ["#e6edf3", "memory file"], map: ["#6cb6ff", "map"], species: ["#7ee0b5", "species"],
+  nick: ["#ff9e64", "nickname"], npc: ["#c9a0ff", "npc/trainer"], mission: ["#f2cc60", "mission"], link: ["#f47067", "[[link]]"]};
+$("legend").innerHTML = Object.values(TYPE).map(([c, l]) => `<span><i style="background:${c}"></i>${l}</span>`).join("");
+const nodes = new vis.DataSet(), edges = new vis.DataSet();
+const net = new vis.Network($("graph"), {nodes, edges}, {
+  nodes: {shape: "dot", font: {color: "#aeb8c4", size: 11, face: "system-ui"}, borderWidth: 0},
+  edges: {color: {color: "#2a3441", highlight: "#6cb6ff"}, width: 1, smooth: false},
+  physics: {solver: "forceAtlas2Based", forceAtlas2Based: {gravitationalConstant: -30, centralGravity: .03, springLength: 45, avoidOverlap: .3},
+    stabilization: {iterations: 200}, maxVelocity: 30},
+  interaction: {hover: true, tooltipDelay: 150},
+});
+net.once("stabilizationIterationsDone", () => net.fit());
+net.once("stabilized", () => net.fit({animation: true}));
+addEventListener("resize", () => net.fit());
+function nodeStyle(n, deg) {
+  const c = TYPE[n.type]?.[0] || "#888", file = n.type === "file";
+  return {id: n.id, label: n.label, title: `${TYPE[n.type]?.[1] || n.type}: ${n.label}`,
+    size: file ? 16 + Math.min(deg, 30) * .4 : 5 + Math.min(deg, 6) * 1.5,
+    color: {background: c, border: c, highlight: {background: "#fff", border: "#fff"}},
+    font: file ? {color: "#e6edf3", size: 13, bold: true} : {color: "#8b96a3", size: 10}, base: c};
+}
+let firstGraph = true;
+function onGraph(g) {
+  const deg = {};
+  g.edges.forEach(([a, b]) => { deg[a] = (deg[a] || 0) + 1; deg[b] = (deg[b] || 0) + 1; });
+  const fresh = g.nodes.filter(n => !nodes.get(n.id)).map(n => n.id);
+  nodes.update(g.nodes.map(n => nodeStyle(n, deg[n.id] || 0)));
+  const want = new Set(g.nodes.map(n => n.id));
+  nodes.remove(nodes.getIds().filter(id => !want.has(id)));
+  const eids = g.edges.map(([a, b]) => a + "|" + b), ewant = new Set(eids);
+  edges.update(g.edges.filter(([a, b]) => !edges.get(a + "|" + b)).map(([a, b]) => ({id: a + "|" + b, from: a, to: b})));
+  edges.remove(edges.getIds().filter(id => !ewant.has(id)));
+  $("gstats").textContent = `${g.nodes.filter(n => n.type === "file").length} files · ${g.nodes.length} nodes · ${g.edges.length} links`;
+  if (!firstGraph) fresh.forEach(id => flash(id, "#56d364", 2500));
+  firstGraph = false;
+}
+const flashT = {};
+function flash(id, color, ms = 1500) {
+  const n = nodes.get(id); if (!n) return;
+  nodes.update({id, color: {background: color, border: color}, borderWidth: 3, shadow: {enabled: true, color, size: 18, x: 0, y: 0}});
+  clearTimeout(flashT[id]);
+  flashT[id] = setTimeout(() => nodes.get(id) && nodes.update({id, color: {background: n.base, border: n.base}, borderWidth: 0, shadow: {enabled: false}}), ms);
+}
+function onMem(ev) {
+  const color = ev.op === "write" ? css("--write") : css("--read");
+  flash("file:" + ev.file, color, ev.op === "write" ? 2200 : 1400);
+  (ev.ents || []).forEach(id => flash(id, color, 1800));
+}
+
+/* ---------- learnings */
+let nLearn = 0;
+function onLearn(ev, quiet) {
+  nLearn++; $("lcount").textContent = `${nLearn}`;
+  const src = ev.who === "refiner" ? "refiner" : ev.who === "file" ? "learnings.md" : ev.who === "main" ? "agent" : ev.who;
+  const item = div("item" + (quiet || ev.quiet ? "" : " new"), `<div class="meta">${hhmm(ev.t)} · ${esc(src)} · ${esc(ev.file)}</div>${esc(ev.text)}`);
+  $("learns").prepend(item);
+  while ($("learns").childElementCount > 200) $("learns").lastElementChild.remove();
+  if (quiet || ev.quiet) return;
+  const t = div("toast", `<div class="h">Learned something new · ${esc(src)}</div>${esc(ev.text.length > 220 ? ev.text.slice(0, 219) + "…" : ev.text)}`);
+  $("toasts").prepend(t);
+  while ($("toasts").childElementCount > 3) $("toasts").lastElementChild.remove();
+  setTimeout(() => t.classList.add("out"), 6000); setTimeout(() => t.remove(), 6700);
+}
+
+/* ---------- events */
+function handle(ev, quiet) {
+  switch (ev.k) {
+    case "text": add(div("txt", `<span class="time">${hhmm(ev.t)}</span>${esc(ev.text)}`)); break;
+    case "tool": { const d = div("tool", `<span class="time">${hhmm(ev.t)}</span><span class="n">${esc(ev.text)}</span>`); toolRows[ev.id] = d; add(d); break; }
+    case "result": { const d = toolRows[ev.id]; if (d) { d.insertAdjacentHTML("beforeend", ` <span class="r${ev.err ? " err" : ""}">→ ${esc(ev.text)}</span>`); if (!hover) feed.scrollTop = feed.scrollHeight; } delete toolRows[ev.id]; break; }
+    case "spawn": onSpawn(ev, quiet); break;
+    case "return": onReturn(ev, quiet); break;
+    case "mem": if (!quiet) onMem(ev); break;
+    case "learn": onLearn(ev, quiet); break;
+    case "graph": onGraph(ev.graph); break;
+    case "party": onParty(ev.party); break;
+    case "counts": onCounts(ev.counts); break;
+  }
+}
+function connect() {
+  const es = new EventSource("/events");
+  es.onmessage = m => {
+    const ev = JSON.parse(m.data);
+    if (ev.k !== "snapshot") return handle(ev, false);
+    feed.innerHTML = ""; $("learns").innerHTML = ""; $("trail").innerHTML = ""; nLearn = 0;
+    $("mode").textContent = ev.mode; $("mode").className = "tag" + (ev.mode === "live" ? " live" : "");
+    $("speedbox").hidden = !ev.mode.startsWith("replay");
+    if (ev.mode.startsWith("replay")) $("speed").value = ev.mode.split("x")[1];
+    onGraph(ev.graph); onParty(ev.party); onCounts(ev.counts);
+    ev.events.forEach(e => handle(e, true));
+  };
+  es.onerror = () => { $("mode").textContent = "reconnecting"; $("mode").className = "tag"; };
+}
+$("speed").onchange = e => fetch("/speed?x=" + e.target.value);
+connect();
+</script>
+</body>
+</html>
