@@ -219,11 +219,12 @@ def rom_world(group, num, start=None, elevation=None):
     tile = _tiler(p, prim, sec, lambda x, y: blocks[y * w + x])
     n_obj, objs = p.range(events, 1)[0], u32(p, events + 4)
     npcs = []
-    for i in range(n_obj):  # ObjectEventTemplate, 24 bytes: localId, graphicsId, kind, _, x, y, ..., trainerType @12
-        lid, gfx, _, _, x, y = struct.unpack("<BBBBhh", p.range(objs + 24 * i, 8))
-        trainer = struct.unpack("<H", p.range(objs + 24 * i + 12, 2))[0]
+    for i in range(n_obj):  # ObjectEventTemplate, 24 bytes (docs/addresses.md, Objects)
+        lid, gfx, _, _, x, y, _, mv, rng, _, trainer, sight = struct.unpack("<BBBBhhBBBBHH", p.range(objs + 24 * i, 16))
         npcs.append({"id": lid, "x": x, "y": y, "facing": None, "trainer": bool(trainer), "graphics": gfx,
-                     **({"item": True} if gfx == ITEM_BALL else {})})
+                     **({"item": True} if gfx == ITEM_BALL else {}),
+                     **({"sight": sight, "movement": mv, "range": rng, **({"sees_all": True} if trainer == 2 else {})}
+                        if trainer else {})})
     if start and elevation is None:
         elevation = tile(*start)[2]
         elevation = 0 if elevation == 15 else elevation  # a bridge keeps your level: unknown here, so unconstrained

@@ -653,10 +653,13 @@ TOOLS = {
                 S({"x": {"type": "integer"}, "y": {"type": "integer"}, "max_steps": {"type": "integer"}},
                   ["x", "y"]), True),
     "sneak_to": (t_sneak_to, "Walk to tile (x, y) on this map without being seen by watchers (trainers and guards, "
-                 "including ones patrolling back and forth). Plans around fixed sight lines; before each step re-reads "
-                 "every watcher and steps only when the next tile stays out of their sight for their next moves, "
-                 "otherwise waits on a safe tile or steps aside. Stops if a script or battle starts (caught) and says "
-                 "where. Use it where patrolling watchers send you back when they spot you; walk_to elsewhere.",
+                 "including ones patrolling back and forth). Plans around fixed sight lines; learns each patroller's "
+                 "turning points and step timing by watching, then crosses watched ground from one safe tile to the "
+                 "next only in a window where every tile of the crossing stays unseen (waiting the exact frames for "
+                 "it), and never stops on a watched tile. Watchers off screen count as watching their whole patrol "
+                 "until they appear. Stops if a script or battle starts (caught), or when the way stays watched, and "
+                 "says which watcher. Use it where patrolling watchers send you back when they spot you; walk_to "
+                 "elsewhere.",
                  S({"x": {"type": "integer"}, "y": {"type": "integer"}, "max_steps": {"type": "integer"},
                     "max_wait_frames": {"type": "integer"}}, ["x", "y"]), True),
     "travel_to": (t_travel_to, "Travel to the named map (e.g. 'Route 2') across maps via doors and edges. "
