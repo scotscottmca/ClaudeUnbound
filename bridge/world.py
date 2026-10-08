@@ -183,8 +183,15 @@ def read_world(p):
         raise ValueError(f"VMap {vw}x{vh} doesn't match layout {w}x{h}")
     blocks = struct.unpack(f"<{vw * vh}H", p.range(vptr, vw * vh * 2))
     tile = _tiler(p, prim, sec, lambda x, y: blocks[(y + BORDER_Y) * vw + x + BORDER_X])
+    npcs, player, player_elev = objects(p)
+    return _world(p, w, h, tile, events, connections, npcs, player, player_elev)
 
-    npcs, player = [], None
+
+def objects(p):
+    """(npcs, player (x, y), player elevation) from the live object events: one read, cheap enough to poll.
+    Only objects near the camera are live; the game despawns the rest. Trainers carry their sight range
+    (+0x1D, tiles straight ahead) and movement type (+0x06); see docs/addresses.md, Objects."""
+    npcs, player, player_elev = [], None, 0
     evs = p.range(OBJECT_EVENTS, 16 * 0x24)
     for i in range(16):
         ev = evs[i * 0x24:(i + 1) * 0x24]
@@ -195,8 +202,10 @@ def read_world(p):
             player, player_elev = (x, y), ev[0x0B] & 0xF
             continue
         npcs.append({"id": ev[8], "x": x, "y": y, "facing": FACING.get(ev[0x18] & 0xF),
-                     "trainer": bool(ev[7]), "graphics": ev[5], **({"item": True} if ev[5] == ITEM_BALL else {})})
-    return _world(p, w, h, tile, events, connections, npcs, player, player_elev)
+                     "trainer": bool(ev[7]), "graphics": ev[5], **({"item": True} if ev[5] == ITEM_BALL else {}),
+                     **({"sight": ev[0x1D], "movement": ev[6], **({"sees_all": True} if ev[7] == 2 else {})}
+                        if ev[7] else {})})
+    return npcs, player, player_elev
 
 
 def rom_world(group, num, start=None, elevation=None):

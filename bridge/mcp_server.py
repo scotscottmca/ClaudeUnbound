@@ -537,6 +537,10 @@ def t_walk_to(a):
     return run_bot(walk)
 
 
+def t_sneak_to(a):
+    return run_bot(bot.sneak, p, (a["x"], a["y"]), a.get("max_steps", 80), a.get("max_wait_frames", 2400))
+
+
 def t_travel_to(a):
     bot.MAX_STEPS = a.get("max_steps", 300)
     # Every wild Pokemon is battled (user rule, 2026-10-08): stop and hand the battle to the agent, never flee.
@@ -648,6 +652,13 @@ TOOLS = {
                 "dialog, or when blocked.",
                 S({"x": {"type": "integer"}, "y": {"type": "integer"}, "max_steps": {"type": "integer"}},
                   ["x", "y"]), True),
+    "sneak_to": (t_sneak_to, "Walk to tile (x, y) on this map without being seen by watchers (trainers and guards, "
+                 "including ones patrolling back and forth). Plans around fixed sight lines; before each step re-reads "
+                 "every watcher and steps only when the next tile stays out of their sight for their next moves, "
+                 "otherwise waits on a safe tile or steps aside. Stops if a script or battle starts (caught) and says "
+                 "where. Use it where patrolling watchers send you back when they spot you; walk_to elsewhere.",
+                 S({"x": {"type": "integer"}, "y": {"type": "integer"}, "max_steps": {"type": "integer"},
+                    "max_wait_frames": {"type": "integer"}}, ["x", "y"]), True),
     "travel_to": (t_travel_to, "Travel to the named map (e.g. 'Route 2') across maps via doors and edges. "
                   "Stops when a wild battle starts (battle it). If the way is blocked (a "
                   "story gate, an object, a one-way ledge) it stops and says where, so you can decide.",

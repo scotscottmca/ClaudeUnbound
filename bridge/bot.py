@@ -147,6 +147,221 @@ def stride(p, path, facing, max_tiles=8):
     return -1 if across or along < 0 or along > n else along
 
 
+# --- sneaking past watchers (docs/gym-mechanics.md) ---------------------------------------------------------
+# A trainer object (+0x07 != 0) sees SIGHT tiles straight ahead (+0x1D), stopped by a wall, and the game checks it
+# every frame the player stands still: Crater Town gym's guard (sight 1) caught the player stepping in front of it
+# ("Gotcha!", warped back), but not standing on its row 7-8 tiles ahead of it. Movement types are vanilla's.
+FIXED_FACING = {0, 7, 8, 9, 10}  # none, face up/down/left/right (verified: object id 3 there is type 8, faces down)
+BACK_AND_FORTH = {0x19, 0x1A, 0x1B, 0x1C}  # walk up/down, left/right (the guard: 0x1B, x 9..18 on row 27)
+OPPOSITE = {"up": "down", "down": "up", "left": "right", "right": "left"}
+WATCHER_FRAMES = 16  # a patroller walks a tile per 16 frames (measured on the guard); the player takes 8
+SNEAK_AHEAD = 2  # watcher steps predicted per check: covers the check's reads plus one player step (~25 frames)
+SWEEP = 30  # watcher steps that count as "forever" when finding safe zones (a patrol of up to ~15 tiles)
+TURNS = {}  # (group, num, id) -> {facing: farthest tile it reached in that facing before turning}, learned
+
+
+def sight(w, x, y, face, rng):
+    """Tiles a watcher at (x, y) facing FACE sees: up to RNG tiles straight ahead, stopped by a wall."""
+    dx, dy = DIRS[face.upper()]
+    out = set()
+    for i in range(1, rng + 1):
+        t = (x + dx * i, y + dy * i)
+        if not (0 <= t[0] < w["width"] and 0 <= t[1] < w["height"]) or w["tile"](*t)[1]:
+            break
+        out.add(t)
+    return out
+
+
+def futures(w, n, ahead=SNEAK_AHEAD, turns=None, since=0):
+    """Every (x, y, facing) watcher N may be in from its step SINCE to its step AHEAD (0 = now). A back-and-forth walker turns only where
+    it was seen turning (TURNS: {facing: tile}); until then it may turn on any tile. Other movers may face or step
+    any way."""
+    mv, turns = n.get("movement"), turns or {}
+
+    def open_(t):
+        return 0 <= t[0] < w["width"] and 0 <= t[1] < w["height"] and not w["tile"](*t)[1]
+
+    def step(x, y, f):
+        if mv in FIXED_FACING:
+            return {(x, y, f)}
+        if mv not in BACK_AND_FORTH:  # wanders, rotates, walks a sequence: any facing, a step any way
+            return {(x, y, g) for g in OPPOSITE} | {(x + dx, y + dy, g.lower()) for g, (dx, dy) in DIRS.items()
+                                                    if open_((x + dx, y + dy))}
+        dx, dy = DIRS[f.upper()]
+        # The guard turns and steps back in one go (measured: at (9,27) facing left, 2 frames later (10,27) right).
+        back = {(x, y, OPPOSITE[f])} | ({(x - dx, y - dy, OPPOSITE[f])} if open_((x - dx, y - dy)) else set())
+        if turns.get(f) == (x, y) or not open_((x + dx, y + dy)):
+            return back
+        return {(x + dx, y + dy, f)} | (set() if f in turns else back)
+
+    states = {(n["x"], n["y"], n["facing"])}
+    seen = set(states) if since == 0 else set()
+    for i in range(1, ahead + 1):
+        states = {s for x, y, f in states for s in step(x, y, f)}
+        if i >= since:
+            seen |= states
+    return seen
+
+
+def danger(w, ahead=SNEAK_AHEAD, turns_of=lambda n: None, since=0):
+    """Tiles some watcher (a trainer object with a sight range) may see from its step SINCE to its step AHEAD."""
+    out = set()
+    for n in w["npcs"]:
+        if not n.get("sight") or not n.get("facing"):
+            continue
+        for x, y, f in futures(w, n, ahead, turns_of(n), since):
+            for g in (OPPOSITE if n.get("sees_all") else [f]):
+                out |= sight(w, x, y, g, n["sight"])
+    return out
+
+
+def landing(w, x, y, key):
+    """Where KEY from (x, y) puts the player: two tiles on over a ledge or a gap, else the next tile."""
+    dx, dy = DIRS[key]
+    beh = w["tile"](x + dx, y + dy)[0]
+    jump = beh in LEDGE_DIR or (beh == W.HOP and key in ("LEFT", "RIGHT"))
+    return (x + 2 * dx, y + 2 * dy) if jump else (x + dx, y + dy)
+
+
+def sneak(p, target, max_steps=80, max_wait=2400):
+    """Walk to TARGET without entering any watcher's sight. Static sight lines are planned around; before each
+    step the watchers are re-read and the step is taken only if the tile stays out of every predicted sight line,
+    else it waits on a safe tile (or steps aside to one). Stops on a script, battle or dialog (caught) and says so;
+    never presses anything but direction keys in the overworld."""
+    w = W.read_world(p)  # tiles don't change; objects are polled with W.objects (one read)
+    g, num = struct.unpack("<bb", p.range(p.read32(SB1_PTR) + 4, 2))
+    turns, last = {}, {}
+
+    def watch(npcs):  # learn turning points: the farthest tile seen in a facing just before it flipped
+        for n in npcs:
+            if not n.get("sight") or n.get("movement") not in BACK_AND_FORTH:
+                continue
+            key = (g, num, n["id"])
+            t = TURNS.setdefault(key, {})
+            prev = last.get(key)
+            if prev and prev[2] == OPPOSITE.get(n["facing"]):
+                # Keep the farthest: a poll that missed the turn tile would otherwise shrink the patrol.
+                dx, dy = DIRS[prev[2].upper()]
+                old = t.get(prev[2])
+                if old is None or prev[0] * dx + prev[1] * dy > old[0] * dx + old[1] * dy:
+                    t[prev[2]] = prev[:2]
+            last[key] = (n["x"], n["y"], n["facing"])
+        return lambda n: TURNS.get((g, num, n["id"]))
+
+    waited, steps, path, leg, back, ladders = 0, 0, None, 0, None, {}
+    while steps < max_steps:
+        r = raw(p)
+        if r["mode"] != "overworld":
+            s = get_state(p)
+            raise SystemExit(f"stopped: {r['mode']} at {s['pos']} after {steps} steps: a script, battle or dialog took over "
+                             f"(caught by a watcher, or an event). Text: {s.get('dialog') or (s.get('battle') or {}).get('text')!r}. "
+                             "Read it (advance_dialog) and see where you are before trying again.")
+        npcs, player, elev = W.objects(p)
+        w = dict(w, npcs=npcs, player=list(player), elevation=elev)
+        here = tuple(player)
+        if here == tuple(target):
+            print(f"arrived at {here} after {steps} steps, {waited} frames waiting")
+            return
+        turns_of = watch(npcs)
+        if path is None:
+            # Plan around sight lines that never move; patrollers are timed instead.
+            static = danger(dict(w, npcs=[n for n in npcs if n.get("movement") in FIXED_FACING])) - {tuple(target)}
+            path = plan(w, {tuple(target)}, static) or plan(w, {tuple(target)}, set())
+            if not path:
+                raise SystemExit(f"no path from {here} to {tuple(target)}")
+            # Safe zones: tiles no watcher can see however long it walks (alcoves off a patrol corridor).
+            sweep = danger(w, SWEEP, turns_of)
+            print(f"plan {len(path)} steps: {''.join(k[0] for k in path)}")
+            leg = 0
+        tiles = _tiles(w, here, path)
+        key, hot, run = path[0], danger(w, turns_of=turns_of), path[:max(leg, 1)]
+        if here in hot and tiles[0] in hot:
+            # About to be watched where it stands (a watcher changed course): step to a tile that stays clear,
+            # back the way it came first, and re-plan from there.
+            free = [k for k in ([back] if back else []) + list(DIRS)
+                    if (t := landing(w, *here, k)) not in hot and plan(w, {t}, set()) == [k]]
+            if not free:
+                raise SystemExit(f"stopped at {here}: every tile around is about to be watched")
+            key, path, run, leg = free[0], None, [free[0]], 0
+            print(f"{here} about to be watched: stepping {key} out of the way")
+        elif here not in hot and (tiles[0] in hot or leg == 0):
+            # At rest (a safe zone, or where the plan starts): go on to the next safe zone only if no tile on the way
+            # can be seen while the player is on it; else to a nearer zone that is closer to the target; else wait.
+            n, bad = _leg(w, here, path, sweep, turns_of)
+            if bad and here not in ladders:
+                ladders[here] = _ladder(w, here, tuple(target), len(path), sweep, static)
+            for z in ladders.get(here, []) if bad else []:
+                alt = plan(w, {z}, static)
+                if alt and _leg(w, here, alt, sweep, turns_of)[1] is None:
+                    print(f"{here}: the way on is watched at {bad}; heading for the safe tile {z} first")
+                    path, (n, bad) = alt, _leg(w, here, alt, sweep, turns_of)
+                    tiles = _tiles(w, here, path)
+                    break
+            if tiles[0] in hot or bad:
+                if waited >= max_wait:
+                    raise SystemExit(f"stopped: waited {waited} frames at {here}; the way on stayed watched "
+                                     f"({bad or tiles[0]}). Watchers: " + ", ".join(
+                                         f"id {n['id']} at ({n['x']},{n['y']}) facing {n['facing']} sight {n['sight']}"
+                                         for n in npcs if n.get("sight")))
+                p.step(4)
+                waited += 4
+                continue
+            leg, key, run = n, path[0], path[:n]
+            print(f"{here}: clear to {tiles[n - 1]} ({n} tiles)" + (f" after waiting {waited} frames" if waited else ""))
+        facing = W.FACING.get(p.range(W.OBJECT_EVENTS + 0x18, 1)[0] & 0xF)
+        moved = stride(p, run, facing)  # the straight part of the cleared stretch, in one held press
+        steps += 1
+        back = {"UP": "DOWN", "DOWN": "UP", "LEFT": "RIGHT", "RIGHT": "LEFT"}[key]
+        if moved > 0 and path:
+            print(f"{here} {key}x{moved} -> {tiles[moved - 1]}")
+            del path[:moved]
+            leg = max(leg - moved, 0)
+        elif moved <= 0:
+            path = None  # blocked, or off the plan (a ledge, a slide): re-plan
+        if not path:
+            path = None
+    raise SystemExit(f"stopped: max_steps ({max_steps}) reached")
+
+
+def _tiles(w, here, path):
+    out, t = [], here
+    for k in path:
+        t = landing(w, *t, k)
+        out.append(t)
+    return out
+
+
+def _leg(w, here, path, sweep, turns_of):
+    """(tiles up to the next safe zone along PATH, the first of them a watcher may see while the player is on it).
+    A held key walks 2 tiles per watcher step (8 frames vs 16); a corner costs ~2 steps (settling, re-reading).
+    Tile i counts as occupied from a step before that estimate to SNEAK_AHEAD steps after it."""
+    tiles = _tiles(w, here, path)
+    n = next((i + 1 for i, t in enumerate(tiles) if t not in sweep), len(tiles))
+    corners = 0
+    for i, t in enumerate(tiles[:n]):
+        corners += i > 0 and path[i] != path[i - 1]
+        at = (i + 1) // 2 + 2 * corners
+        if t in danger(w, at + SNEAK_AHEAD, turns_of, since=max(0, at - 1)):
+            return n, t
+    return n, None
+
+
+def _ladder(w, here, target, length, sweep, static):
+    """Safe zones near HERE (out of every watcher's sweep) from which TARGET is nearer than LENGTH steps, nearest
+    to the target first: places to wait on the way."""
+    seen = set()
+    plan(w, set(), set(), visit=seen, limit=600)
+    out = []
+    for z in seen - sweep - {here}:
+        if abs(z[0] - here[0]) + abs(z[1] - here[1]) > 12:
+            continue
+        elev = w["tile"](*z)[2]
+        to = plan(dict(w, player=list(z), elevation=0 if elev == 15 else elev), {target}, static)
+        if to is not None and len(to) < length:
+            out.append((len(to), z))
+    return [z for _, z in sorted(out)]
+
+
 def exit_to(w, target):
     """Goal tiles and the final key that leaves the map toward TARGET, a [group, num] map ID."""
     for c in w["connections"]:

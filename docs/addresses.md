@@ -100,6 +100,23 @@ Pockets are arrays of u16 item ID + u16 count, no XOR, in EWRAM:
 
 - Object graphics 92 = item on the ground (Poké Ball sprite): verified on Route 2, objects at (8,28) and (17,27) sit exactly on the two ball sprites in a screenshot. Hidden items are bg events kind 7 (not handled).
 
+`gObjectEvents` entry fields (0x24 bytes), read-only on the Crater Town gym (6/2), 2026-10-08. `world.objects()` reads them and `bot.sneak` uses them (docs/gym-mechanics.md):
+
+| Field | Offset | Status | Evidence |
+|---|---|---|---|
+| graphicsId | +0x05 | verified | Guard 22, object id 3 91, item ball 92. Matches the template (+1) |
+| movementType | +0x06 | verified | Vanilla numbering. Object id 3: 8 (FACE_DOWN), facing down. Guard id 7: 0x1B (WALK_LEFT_AND_RIGHT), seen walking left and right along row 27. Matches the template (+9) |
+| trainerType | +0x07 | verified | 1 on the guard and template trainers, 0 on others. Matches the template (+0xC, u16) |
+| initialCoords | +0x0C | verified | (18,27)+7 for the guard = the template position |
+| facing / movement direction | +0x18 low / high nibble | verified | 3 while walking left, 4 while walking right |
+| movementRange | +0x19 (x low nibble, y high) | plausible | Guard 0x19 (rangeX 9) = template 0x9. **The patrol ignores it**: it turns at x 9 and 18 (init − 9 .. init), not init ± 9 (x 21 is the wall). So turning points are learned by watching |
+| movementActionId | +0x1C | plausible | 0x12 while stepping left, 0x13 while stepping right, 0xFF when idle |
+| trainerRange (sight) | +0x1D | verified (offset), plausible (meaning) | Guard 1 = template trainerRange (+0xE, u16) 1. Template trainers ids 2/4/5/6 have 4/3/4/3. Behaviour: caught stepping onto the tile right in front of the guard ((19,27), guard at (18,27) facing right: "Gotcha!", warped to (27,24)); not caught standing on (20,27) with the guard 7–8 tiles away facing it. Consistent with vanilla "sees N tiles straight ahead". A range above 1 has not been tested |
+| patrol timing | — | verified | 16 frames per tile (`gMain.vblankCounter2` deltas of 16 between moves), turns at an end within the same step (at (9,27) facing left, then 2 frames later at (10,27) facing right); cycle ~288 frames. The player walks a tile in 8 |
+
+- **Only objects near the camera are live.** With the player at (20,26), guard 8 (template (8,27), patrols x 1..15) wasn't in `gObjectEvents`. Watchers off screen are invisible to any tool.
+- **Object template** (`events` +4, 24 bytes): + elevation (+8), movementType (+9), movementRange (+0xA), trainerType (+0xC, u16), trainerRange (+0xE, u16), script (+0x10), flag (+0x14). Verified on 6/2 for the two objects that were loaded (ids 3 and 7): graphics, movement type, range, trainer type and sight all match.
+
 ## Pokédex
 
 | Name | Address | Status | Evidence |
