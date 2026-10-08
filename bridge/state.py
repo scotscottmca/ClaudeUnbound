@@ -87,6 +87,12 @@ def current_text(p, printer):
     """Text of the box printer 0 is on: from the last paragraph break before its cursor
     to the next one. ponytail: a 0xFB/0xFF inside a control code's argument would cut it short."""
     cur = struct.unpack("<I", printer[0:4])[0]
+    if not printer[0x1B] and STRING_VAR4 <= cur < STRING_VAR4 + 0x400:
+        # Finished message: its cursor sits just past gStringVar4's first 0xFF. Instant text (e.g. the
+        # mission banner script on 3/71) prints through a temporary printer and leaves this cursor
+        # stale, pointing into an older, longer message's leftovers; so go by the buffer, not the cursor.
+        end = p.range(STRING_VAR4, 0x400).find(0xFF)
+        cur = STRING_VAR4 + end + 1 if end >= 0 else cur
     data = p.range(cur - 0x100, 0x200)
     end = next((i for i in range(0xFF, 0x200) if data[i] in (0xFB, 0xFF)), 0x200)
     start = max((i for i in range(0, end) if data[i] in (0xFB, 0xFF)), default=-1) + 1
