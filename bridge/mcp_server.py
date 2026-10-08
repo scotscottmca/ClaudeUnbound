@@ -81,6 +81,59 @@ last_fingerprint, unchanged, watchdog_fired = None, 0, 0
 last_map = None  # (group, num) after the previous action, for the UNEXPLORED note
 items_noted = set()  # object ids of ground items already pointed out on this visit
 doors_flagged = set()  # (map, x, y) doors already named in an UNEXPLORED note
+items_close = set()  # object ids of ground items already pointed out at close range on this visit
+last_obs = None  # what the observers saw on the current map at the last overworld action
+TODO = os.path.join(os.path.dirname(LOG), "todo.json")  # harness-kept to-do list, rendered to memory/todo.md
+
+
+def _todo_load():
+    try:
+        return json.load(open(TODO, encoding="utf-8"))
+    except (OSError, ValueError):
+        return {}
+
+
+def _todo_save(t):
+    with open(TODO, "w", encoding="utf-8") as f:
+        json.dump(t, f, ensure_ascii=False, indent=0)
+    md = os.path.join(os.path.dirname(LOG), "memory", "todo.md")
+    if os.path.isdir(os.path.dirname(md)):
+        lines = ["# To do (kept by the harness: entries disappear once resolved)", ""]
+        lines += [f"- {v}" for v in sorted(t.values())] or ["- nothing pending"]
+        with open(md, "w", encoding="utf-8") as f:
+            f.write("\n".join(lines) + "\n")
+
+
+def todo_add(o):
+    """Things left behind on a map (items, NPCs, signs) and doors never entered."""
+    t = _todo_load()
+    g, n = o["map"]
+    for x, y in o["items"]:
+        t[f"item:{g},{n}:{x},{y}"] = f"{o['name']} ({g},{n}): item on the ground at ({x},{y})"
+    for x, y in o["npcs"]:
+        t[f"npc:{g},{n}:{x},{y}"] = f"{o['name']} ({g},{n}): talk to the NPC near ({x},{y})"
+    for x, y in o["signs"]:
+        t[f"sign:{g},{n}:{x},{y}"] = f"{o['name']} ({g},{n}): read the sign at ({x},{y})"
+    _todo_save(t)
+
+
+def todo_resolve(o):
+    """Drop entries for this map that are done: the item is gone, the NPC talked to, the sign read."""
+    t = _todo_load()
+    g, n = o["map"]
+    keep = {f"item:{g},{n}:{x},{y}" for x, y in o["items"]} | {f"sign:{g},{n}:{x},{y}" for x, y in o["signs"]}
+    keep |= {f"npc:{g},{n}:{x},{y}" for x, y in o["npcs"]}
+    here = f":{g},{n}:"
+    gone = [k for k in t if here in k and k not in keep and not k.startswith("npc:")]
+    # NPCs wander, so their positions drift: an NPC entry clears only when no untalked NPC is left on the map.
+    if not o["npcs"]:
+        gone += [k for k in t if here in k and k.startswith("npc:")]
+    # A door is done once the map behind it has been visited.
+    gone += [k for k in t if k.startswith("door:") and tuple(map(int, k.split("|")[1].split(","))) in tracker.seen_maps]
+    if gone:
+        for k in gone:
+            t.pop(k, None)
+        _todo_save(t)
 battle_seen = False
 
 
@@ -175,26 +228,62 @@ def notes(s):
             skipped = [] if here in {d for _, _, d in ds} else \
                 [(x, y) for x, y, dest in ds if dest not in tracker.seen_maps and (last_map, x, y) not in doors_flagged]
             doors_flagged.update((last_map, x, y) for x, y in skipped)  # once per door: Dresco (1,9) repeated every exit
+            if skipped:
+                t = _todo_load()
+                for x, y, dest in ds:
+                    if (x, y) in skipped:
+                        t[f"door:{last_map[0]},{last_map[1]}:{x},{y}|{dest[0]},{dest[1]}"] = \
+                            f"{W.map_name(None, *last_map)} {tuple(last_map)}: enter the door at ({x},{y})"
+                _todo_save(t)
         except Exception:  # ROM read for a map header: hints only
             skipped = []
         if skipped:
             out.append(f"UNEXPLORED: you left {W.map_name(None, *last_map)} with {len(skipped)} door(s) never entered "
                        f"at {', '.join(f'({x},{y})' for x, y in skipped[:8])}. Policy: enter every building and talk "
                        "to everyone once. Go back unless something stops you (a story gate, a locked door).")
+    global last_obs
     if here != last_map:
         items_noted.clear()  # a new visit: mention this map's items again
+        items_close.clear()
+        if last_obs and last_obs["map"] == last_map:  # leaving: what was left behind on the map just left
+            o, parts = last_obs, []
+            for kind, label in (("items", "item(s) on the ground"), ("npcs", "NPC(s) not talked to"),
+                                ("signs", "sign(s) not read")):
+                if o[kind]:
+                    parts.append(f"{len(o[kind])} {label} at {', '.join(f'({x},{y})' for x, y in o[kind][:6])}")
+            if parts:
+                out.append(f"MISSED on {o['name']}: {'; '.join(parts)}. Added to memory/todo.md: go back now, or "
+                           "pick them up when you pass again.")
+                todo_add(o)
     last_map = here
     if s["mode"] == "overworld":
-        # Items on the ground (user rule, 2026-10-08): point out each reachable one once per visit.
+        # Observers, every action (user, 2026-10-08: learning as real-time as possible).
         try:
             w = W.read_world(p)
+            px, py = w["player"]
+            items = []
             for n in w["npcs"]:
-                if n.get("item") and n["id"] not in items_noted:
+                if not n.get("item"):
+                    continue
+                near = {(n["x"] + dx, n["y"] + dy) for dx, dy in bot.DIRS.values()}
+                if bot.plan(w, near, set()) is None:
+                    continue
+                items.append((n["x"], n["y"]))
+                dx, dy = n["x"] - px, n["y"] - py
+                if n["id"] not in items_noted:
                     items_noted.add(n["id"])
-                    near = {(n["x"] + dx, n["y"] + dy) for dx, dy in bot.DIRS.values()}
-                    if bot.plan(w, near, set()) is not None:
-                        out.append(f"ITEM: an item on the ground at ({n['x']},{n['y']}) ('o' on the map) is reachable: "
-                                   "walk_to it to pick it up.")
+                    out.append(f"ITEM: an item on the ground at ({n['x']},{n['y']}) ('o' on the map) is reachable: "
+                               "walk_to it to pick it up.")
+                elif abs(dx) + abs(dy) <= 4 and n["id"] not in items_close:  # walking past it
+                    items_close.add(n["id"])
+                    where = ", ".join(f"{abs(v)} {d}" for v, d in ((dx, "right" if dx > 0 else "left"),
+                                                                    (dy, "down" if dy > 0 else "up")) if v)
+                    out.append(f"ITEM {where} of you at ({n['x']},{n['y']}): pick it up while you're here.")
+            g, num = here
+            npcs = [(n["x"], n["y"]) for n in w["npcs"] if not n.get("item") and f"{g},{num},{n['id']}" not in talked]
+            signs = [(x["x"], x["y"]) for x in w["signs"] if f"{g},{num},sign@{x['x']},{x['y']}" not in talked]
+            last_obs = {"map": here, "name": s["map"]["name"], "items": items, "npcs": npcs, "signs": signs}
+            todo_resolve(last_obs)
         except Exception:  # hints only
             pass
     lead = next((m for m in s["party"] if not m["hp"].startswith("0/")), None)
