@@ -79,6 +79,7 @@ def note_talk(s):
 last_fingerprint, unchanged, watchdog_fired = None, 0, 0
 last_map = None  # (group, num) after the previous action, for the UNEXPLORED note
 items_noted = set()  # object ids of ground items already pointed out on this visit
+doors_flagged = set()  # (map, x, y) doors already named in an UNEXPLORED note
 battle_seen = False
 
 
@@ -171,7 +172,8 @@ def notes(s):
             ds = W.doors(*last_map)
             # Walking into one of this map's own buildings is exploring, not leaving (first live fire: Bellin).
             skipped = [] if here in {d for _, _, d in ds} else \
-                [(x, y) for x, y, dest in ds if dest not in tracker.seen_maps]
+                [(x, y) for x, y, dest in ds if dest not in tracker.seen_maps and (last_map, x, y) not in doors_flagged]
+            doors_flagged.update((last_map, x, y) for x, y in skipped)  # once per door: Dresco (1,9) repeated every exit
         except Exception:  # ROM read for a map header: hints only
             skipped = []
         if skipped:
