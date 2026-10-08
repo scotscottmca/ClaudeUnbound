@@ -8,7 +8,7 @@ press through them.
 import struct
 
 from naming import NAMING_CB2
-from state import BATTLE_MONS, DISPLAYED_STRING_BATTLE, NAMES, STRING_VAR4, decode, get_state, raw
+from state import BATTLE_MONS, DISPLAYED_STRING_BATTLE, NAMES, PLAYER_PARTY, STRING_VAR4, decode, get_state, raw
 
 CONTROLLERS = 0x03004FE0  # gBattlerControllerFuncs, u32 per battler
 ACTION_MENU, MOVE_MENU = 0x0802E439, 0x0802EA11
@@ -67,6 +67,8 @@ def _settle(p):
     """After choosing: wait for the next menu, the end of the battle, or a prompt (agent's call)."""
     b, _ = wait_for_menu(p)
     r = raw(p)
+    if p.read32(0x030030F4) == CB2_BATTLE_PARTY:
+        return "a Pokemon fainted: choose its replacement with switch_to"
     if r["mode"] != "battle":
         return "the battle is over" if r["mode"] in ("overworld", "other") else f"now in {r['mode']}"
     return "your next turn" if b is not None else "text or a prompt is waiting (advance_dialog / press_buttons)"
@@ -141,13 +143,17 @@ def party_cursor_to(p, target):
 
 def _party_slot(p, name):
     party = get_state(p)["party"]
-    # Names can repeat (two uncaught-nickname Makuhita): prefer one that can still fight.
+    # Who's in battle, by personality (gBattleMons +0x48 vs party +0): independent of party order and names.
+    out = {p.read32(BATTLE_MONS + 0x58 * b + 0x48) for b in ((0, 2) if p.read32(BATTLE_TYPE_FLAGS) & DOUBLE else (0,))}
+    ok = [not m["hp"].startswith("0/") and p.read32(PLAYER_PARTY + 100 * i) not in out for i, m in enumerate(party)]
+    # Names can repeat (two uncaught-nickname Makuhita): take one that can be sent in.
     matches = [i for i, m in enumerate(party) if m["name"].lower() == name.lower()]
-    slot = next((i for i in matches if not party[i]["hp"].startswith("0/")), matches[0] if matches else None)
-    if slot is None:
+    if not matches:
         raise SystemExit(f"no {name!r} in the party: {[m['name'] for m in party]}")
-    if party[slot]["hp"].startswith("0/"):
-        raise SystemExit(f"{name} has fainted; healthy: {[m['name'] for m in party if not m['hp'].startswith('0/')]}")
+    slot = next((i for i in matches if ok[i]), None)
+    if slot is None:
+        raise SystemExit(f"{name} has fainted or is already in battle; you can send in: "
+                         f"{[m['name'] for i, m in enumerate(party) if ok[i]] or 'nobody'}")
     return slot
 
 
