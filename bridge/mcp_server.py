@@ -95,6 +95,12 @@ def notes(s):
                    "screenshot, re-read your objectives, try something different, or load_state the last "
                    "good save." + (" ESCALATE to the expert subagent: the watchdog has fired repeatedly."
                                    if watchdog_fired >= 2 else ""))
+    lead = next((m for m in s["party"] if not m["hp"].startswith("0/")), None)
+    if s["mode"] == "overworld" and lead:
+        hp, top = map(int, lead["hp"].split("/"))
+        if hp * 4 <= top:  # the agent once walked deeper into Icicle Cave with its lead at 6/37
+            out.append(f"LOW HP: your lead {lead['name']} is at {lead['hp']}. Heal (a potion, or a Pokemon Center / "
+                       "home) before more grass or caves, or put a healthy Pokemon first.")
     spot = (s["map"]["group"], s["map"]["num"], tuple(s["pos"]))
     if s["mode"] == "overworld" and (not arrivals or arrivals[-1] != spot):
         arrivals.append(spot)
