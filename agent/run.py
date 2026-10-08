@@ -34,7 +34,7 @@ TOOLS = ["mcp__unbound", "Read", "Write", "Edit", "Glob", "Grep", "Task", "Agent
 # ScheduleWakeup(1200 s) to "wait for a gym guard's window" and sat idle for 20 minutes. Wait in game time (WAIT).
 BLOCKED = ["ScheduleWakeup", "CronCreate", "CronDelete", "CronList", "Monitor", "RemoteTrigger", "PushNotification"]
 # Describe a previous run's save, not this one: left out when bootstrapping (#22).
-RUN_STATE = {"objectives.md", "team.md", "items.md"}
+RUN_STATE = {"objectives.md", "team.md", "items.md", "operator.md"}
 FIRST = "Start playing. Read memory/ first, then get_state."
 BOOTSTRAP = (" memory/ carries knowledge from a previous run (maps, NPCs, opponents, missions, learnings). The game "
              "restarted from the beginning: anything there about progress or mission status describes that run, not this one.")

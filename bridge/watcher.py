@@ -29,7 +29,7 @@ WATCH_EVERY, VERIFY_EVERY = 10, 20
 DEDUPE_WINDOW = 10
 # Never deduped: WATCHDOG and prompts that need an answer; ITEM/MISSED already fire once per item, door or visit.
 DEDUPE_EXEMPT = ("WATCHDOG", "VERIFY before answering", "FORCED SWITCH", "ITEM", "MISSED")
-HARNESS_OWNED = {"todo.md", "archive.md"}  # the curator never edits these (the harness rewrites todo.md)
+HARNESS_OWNED = {"todo.md", "archive.md", "operator.md"}  # the curator never edits these; todo.md and operator.md are put back
 FILE_BUDGET, OBJECTIVES_BUDGET = 8000, 2000  # characters
 
 RT = sys.modules.get("_unbound_watcher_rt")
@@ -56,7 +56,7 @@ SYSTEM = {
     "curator": "You curate the memory files of an AI agent playing Pokemon Unbound. Work only on the .md files in "
                "the current directory, with Read/Write/Edit/Glob. NEVER delete information: whatever you remove "
                "from a file, append it verbatim to archive.md under a heading '## <what> (archived)'. Never edit "
-               "todo.md (the harness rewrites it) and never rewrite archive.md (append only). Tasks: 1) merge "
+               "todo.md or operator.md (the operator's hints: pinned) and never rewrite archive.md (append only). Tasks: 1) merge "
                "duplicate entries; 2) fold resolved TODOs and done objectives into one short 'Done: ...' line; "
                "3) mark beliefs that look stale or contradicted with '(stale?)'; 4) keep each file under "
                f"{FILE_BUDGET} characters by archiving the least useful detail; 5) objectives.md: under "
@@ -272,20 +272,21 @@ def curate(ws, reason, context="", step=None, direct=False):
     """Tidy WS/memory with the curator model; whatever happens, nothing in memory/ is lost."""
     mem = os.path.join(ws, "memory")
     before = snapshot(mem)
-    todo = os.path.join(mem, "todo.md")
-    todo_text = open(todo, encoding="utf-8").read() if os.path.exists(todo) else None
+    pinned = {n: open(os.path.join(mem, n), encoding="utf-8").read() for n in ("todo.md", "operator.md")
+              if os.path.exists(os.path.join(mem, n))}
     sizes = ", ".join(f"{n} {len(t)}" for n, t in before.items())
     entry = {"step": step, "harness_call": "curator", "model": MODELS["curator"], "reason": reason}
     try:
         text, meta = ask("curator", f"Curate memory now ({reason}). Files and sizes in characters: {sizes}.\n"
                                     f"Game state:\n{context}", cwd=mem, tools=("Read", "Write", "Edit", "Glob"))
-        entry.update(meta, note=text.splitlines()[-1][:300] if text else "")
+        entry.update(meta, note=" ".join(text.split())[:600] if text else "")
     except Exception as e:
         entry["error"] = repr(e)[:300]
     try:
         entry["archived_lines"] = archive_lost(mem, before)
-        if todo_text is not None and open(todo, encoding="utf-8").read() != todo_text:
-            open(todo, "w", encoding="utf-8").write(todo_text)  # harness-owned: put it back
+        for n, t in pinned.items():
+            if open(os.path.join(mem, n), encoding="utf-8").read() != t:
+                open(os.path.join(mem, n), "w", encoding="utf-8").write(t)  # harness-owned: put it back
     except OSError as e:
         entry["error"] = (entry.get("error", "") + f" archive: {e!r}").strip()
     record(ws, entry, direct)

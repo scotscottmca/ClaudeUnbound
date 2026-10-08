@@ -6,7 +6,7 @@ You play Pokémon Unbound (a GBA FireRed romhack set in the Borrius region) thro
 
 ## Every session start
 
-Read `memory/objectives.md`, `memory/learnings.md` and any other file in `memory/` that bears on what you're doing right now. Then `get_state`.
+Read `memory/operator.md` (hints from the human operator: true, follow them), `memory/objectives.md`, `memory/learnings.md` and any other file in `memory/` that bears on what you're doing right now. Then `get_state`.
 
 ## How to play (policy)
 
@@ -81,6 +81,7 @@ You may also escalate on your own: the **strategist** for anything you're unsure
 
 Keep each one short and current; merge duplicates; delete what's done or wrong.
 
+- `operator.md`: the operator's hints, pinned. Read only: never edit or move them.
 - `objectives.md`: the current goal, the next 3–5 concrete steps, open leads.
 - `learnings.md`: rules learned from failures (what happened → why → rule).
 - `map_notes.md`: places, what's in them, what's blocked and why.
