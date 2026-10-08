@@ -24,9 +24,11 @@ WATER = {0x10, 0x11, 0x12, 0x15, 0x1A, 0x1B}
 ICE = {0x23, 0x26, 0x27}
 FORCED = set(range(0x40, 0x48)) | set(range(0x50, 0x59))
 WARP = set(range(0x60, 0x70)) | {0x71}
+HOP = 0x7F  # Unbound: a gap you hop over sideways, LEFT/RIGHT land two tiles on (Grim Woods (7,33), (9,33))
 LEGEND = {"@": "you", "N": "NPC/object", "T": "trainer", ".": "walkable", "#": "blocked", "G": "tall grass",
           "~": "water (Surf)", "W": "waterfall", "I": "ice", "F": "forced movement", "D": "warp/door",
-          "S": "sign", ":": "walkable, but on another level (reach it via stairs or a ramp)", "^v<>": "ledge, jump in that direction", " ": "outside the map"}
+          "S": "sign", ":": "walkable, but on another level (reach it via stairs or a ramp)", "^v<>": "ledge, jump in that direction", "=": "gap, hop over it left or right",
+          " ": "outside the map"}
 
 
 def u32(p, addr):
@@ -186,6 +188,8 @@ def read_world(p):
         beh, col, elev = tile(x, y)
         if beh in LEDGE:
             return LEDGE[beh]
+        if beh == HOP:
+            return "="
         if col:
             return "#"
         # Gen 3 blocks a step onto a different elevation unless either side is 0 (stairs/ramps,
