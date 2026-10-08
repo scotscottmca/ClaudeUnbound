@@ -154,7 +154,7 @@ h2 .note { text-transform: none; letter-spacing: 0; font-weight: 400; color: var
       <div class="scroll" id="feed"></div>
     </section>
     <section id="router">
-      <h2>Model router</h2>
+      <h2>Model router <span class="note" id="runcost" title="estimated: every finished chunk and harness call (watcher, verifier, curator); the running chunk is added when it ends">-</span></h2>
       <svg viewBox="0 0 516 168" preserveAspectRatio="xMidYMid meet">
         <text class="glabel" x="4" y="10">harness</text><text class="glabel" x="512" y="10" text-anchor="end">subagents</text>
         <g id="edges"></g><g id="nodes"></g><g id="pulses"></g>
@@ -291,6 +291,7 @@ function drawStats() {
   const cell = (k, v, sm = "") => `<div><span class="k">${k}</span><b>${v}</b>${sm ? `<span class="sm">${sm}</span>` : ""}</div>`;
   const badges = s.badges != null ? Array.from({length: 8}, (_, i) => `<i class="badge${i < s.badges ? " on" : ""}"></i>`).join("") : "-";
   const tok = r ? Object.entries(r.tokens).map(([m, n]) => `${m.replace(/^claude-|-\d+-\d+$/g, "")} ${(n / 1000).toFixed(0)}k`).join(" · ") : "";
+  $("runcost").textContent = r ? `run cost ≈ $${r.cost.toFixed(2)} (est.)` : "-";
   $("stats").innerHTML =
     cell("Location", esc(map || "-"), [s.map?.kind, s.pos ? `(${s.pos.join(", ")})` : ""].filter(Boolean).join(" · ")) +
     cell("Badges", badges, s.badges != null ? `${s.badges} / 8` : "") +

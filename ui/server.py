@@ -370,7 +370,7 @@ class Stats:
         s["chunks"] += 0 if d.get("kind") else 1  # "kind": a harness-run watcher/verifier/curator call, not a chunk
         if d.get("cost_usd") is not None:
             s["cost"] += d["cost_usd"]
-            s["costed"] += 1
+            s["costed"] += 0 if d.get("kind") else 1  # chunks with a reported cost (harness calls are extra)
         for model, u in (d.get("models") or d.get("usage") or {}).items():
             if isinstance(u, dict) and model.startswith("claude"):
                 out = u.get("outputTokens", u.get("output_tokens", 0))
