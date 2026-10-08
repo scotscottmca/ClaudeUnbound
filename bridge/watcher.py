@@ -3,8 +3,9 @@ block play.
 
 - watcher: every WATCH_EVERY actions, Haiku reads the recent stretch and returns at most 2 actionable notes, or nothing.
 - verifier: every VERIFY_EVERY actions, Sonnet checks recent actions, state and objectives.md: OK or one correction.
-- curator: at a context rotation (agent/run.py, game idle) and on a new badge, Sonnet tidies memory/ with file
-  tools only. Nothing is lost: any line that vanished is appended to memory/archive.md by the harness itself.
+- memory guard (no model; the curator model it replaced cost ~11% of a run for housekeeping): after each action,
+  any line the agent removed from memory/ is appended to memory/archive.md, memory/operator.md is copied from the
+  operator's <workspace>/operator.md, and a file over its budget gets a MEMORY note asking the agent to condense it.
 - hygiene(): drops a harness note emitted verbatim in the last DEDUPE_WINDOW actions.
 
 Each call is a `claude -p` subprocess in a daemon thread, with a timeout; a failure is logged and dropped. Results
@@ -23,13 +24,14 @@ import time
 import types
 
 CLAUDE = os.environ.get("UNBOUND_CLAUDE") or shutil.which("claude") or os.path.expanduser(r"~\.local\bin\claude.exe")
-MODELS = {"watcher": "claude-haiku-5-5", "verifier": "claude-sonnet-5-5", "curator": "claude-sonnet-5-5"}
-TIMEOUT = {"watcher": 90, "verifier": 150, "curator": 240}
+MODELS = {"watcher": "claude-haiku-5-5", "verifier": "claude-sonnet-5-5"}
+TIMEOUT = {"watcher": 90, "verifier": 150}
 WATCH_EVERY, VERIFY_EVERY = 10, 20
 DEDUPE_WINDOW = 10
 # Never deduped: WATCHDOG and prompts that need an answer; ITEM/MISSED already fire once per item, door or visit.
 DEDUPE_EXEMPT = ("WATCHDOG", "VERIFY before answering", "FORCED SWITCH", "ITEM", "MISSED")
-HARNESS_OWNED = {"todo.md", "archive.md", "operator.md"}  # the curator never edits these; todo.md and operator.md are put back
+HARNESS_OWNED = {"todo.md", "archive.md", "operator.md"}  # written by the harness, not the agent
+NAG_EVERY = 25  # actions between MEMORY notes about the same oversized file
 FILE_BUDGET, OBJECTIVES_BUDGET = 8000, 2000  # characters
 
 RT = sys.modules.get("_unbound_watcher_rt")
@@ -53,15 +55,6 @@ SYSTEM = {
                 + POLICY + " Look for beliefs the state contradicts, loops or wasted actions, policy misses, and "
                 "objectives that are done or wrong. Reply exactly OK if nothing needs correcting, else one line "
                 "'FIX: <concrete correction, under 40 words>'.",
-    "curator": "You curate the memory files of an AI agent playing Pokemon Unbound. Work only on the .md files in "
-               "the current directory, with Read/Write/Edit/Glob. NEVER delete information: whatever you remove "
-               "from a file, append it verbatim to archive.md under a heading '## <what> (archived)'. Never edit "
-               "todo.md or operator.md (the operator's hints: pinned) and never rewrite archive.md (append only). Tasks: 1) merge "
-               "duplicate entries; 2) fold resolved TODOs and done objectives into one short 'Done: ...' line; "
-               "3) mark beliefs that look stale or contradicted with '(stale?)'; 4) keep each file under "
-               f"{FILE_BUDGET} characters by archiving the least useful detail; 5) objectives.md: under "
-               f"{OBJECTIVES_BUDGET} characters, a tight 'Now' (1-3 items) and 'Next' (up to 5) list. Be quick: "
-               "about a minute. Finish with one line saying what you changed.",
 }
 
 
@@ -210,11 +203,7 @@ def tick(step, s, log_path):
         spawn("watcher", review, "watcher", step, s, ws)
     if step and step % VERIFY_EVERY == 0:
         spawn("verifier", review, "verifier", step, s, ws)
-    b = s.get("badges") if isinstance(s, dict) else None
-    if isinstance(b, int):
-        if RT.badges is not None and b > RT.badges:
-            spawn("curator", curate, ws, f"badge {b} won", brief(s), step)
-        RT.badges = b
+    guard(ws, step)
 
 
 def drain(log_fn=None):
@@ -226,7 +215,8 @@ def drain(log_fn=None):
     out = []
     while RT.inbox:
         kind, step, text = RT.inbox.pop(0)
-        out.append(f"WATCHER (step {step}): {text}" if kind == "watcher" else f"VERIFIER (as of step {step}): {text}")
+        out.append(f"WATCHER (step {step}): {text}" if kind == "watcher" else f"VERIFIER (as of step {step}): {text}"
+                   if kind == "verifier" else f"MEMORY: {text}")
     return out
 
 
@@ -243,7 +233,7 @@ def hygiene(step, msgs):
     return out
 
 
-# --- curator -----------------------------------------------------------------------------
+# --- memory guard -----------------------------------------------------------------------------
 
 def snapshot(mem):
     out = {}
@@ -263,34 +253,36 @@ def archive_lost(mem, before):
     if lost:
         with open(arch, "a", encoding="utf-8") as f:
             for n, v in lost.items():
-                f.write(f"\n## {time.strftime('%Y-%m-%d %H:%M')}: dropped from {n} by the curator (kept by the harness)\n"
+                f.write(f"\n## {time.strftime('%Y-%m-%d %H:%M')}: dropped from {n} (kept by the harness)\n"
                         + "\n".join(v) + "\n")
     return sum(map(len, lost.values()))
 
 
-def curate(ws, reason, context="", step=None, direct=False):
-    """Tidy WS/memory with the curator model; whatever happens, nothing in memory/ is lost."""
+def guard(ws, step=0):
+    """Main thread, after each action: nothing the agent deletes from memory/ is lost, the operator's hints stay
+    pinned, and an oversized file gets one MEMORY note per NAG_EVERY actions.
+    ponytail: a line the agent merely edits (a count) is archived in its old form too; the archive is never read in
+    play, so noise there is harmless."""
     mem = os.path.join(ws, "memory")
-    before = snapshot(mem)
-    pinned = {n: open(os.path.join(mem, n), encoding="utf-8").read() for n in ("todo.md", "operator.md")
-              if os.path.exists(os.path.join(mem, n))}
-    sizes = ", ".join(f"{n} {len(t)}" for n, t in before.items())
-    entry = {"step": step, "harness_call": "curator", "model": MODELS["curator"], "reason": reason}
     try:
-        text, meta = ask("curator", f"Curate memory now ({reason}). Files and sizes in characters: {sizes}.\n"
-                                    f"Game state:\n{context}", cwd=mem, tools=("Read", "Write", "Edit", "Glob"))
-        entry.update(meta, note=" ".join(text.split())[:600] if text else "")
-    except Exception as e:
-        entry["error"] = repr(e)[:300]
-    try:
-        entry["archived_lines"] = archive_lost(mem, before)
-        for n, t in pinned.items():
-            if open(os.path.join(mem, n), encoding="utf-8").read() != t:
-                open(os.path.join(mem, n), "w", encoding="utf-8").write(t)  # harness-owned: put it back
+        src, dst = os.path.join(ws, "operator.md"), os.path.join(mem, "operator.md")
+        if os.path.exists(src):
+            want = open(src, encoding="utf-8").read()
+            if not os.path.exists(dst) or open(dst, encoding="utf-8").read() != want:
+                open(dst, "w", encoding="utf-8").write(want)
+        if getattr(RT, "mem", None) is not None:
+            archive_lost(mem, RT.mem)
+        RT.mem = now = snapshot(mem)
+        nagged = RT.__dict__.setdefault("nagged", {})
+        for name, text in now.items():
+            budget = OBJECTIVES_BUDGET if name == "objectives.md" else FILE_BUDGET
+            if len(text) > budget and step - nagged.get(name, -10**9) >= NAG_EVERY:
+                nagged[name] = step
+                RT.inbox.append(("memory", step, f"{name} is {len(text)} characters (budget {budget}): condense it "
+                                 "now. Merge duplicates, fold done items into one 'Done:' line, drop detail you won't "
+                                 "need. Deleted lines are archived automatically (memory/archive.md)."))
     except OSError as e:
-        entry["error"] = (entry.get("error", "") + f" archive: {e!r}").strip()
-    record(ws, entry, direct)
-    return entry
+        RT.logs.append({"step": step, "error": f"memory guard: {e!r}"})
 
 
 if __name__ == "__main__":  # offline self-check with a fake claude
@@ -299,8 +291,6 @@ if __name__ == "__main__":  # offline self-check with a fake claude
     fake = os.path.join(tmp, "fake_claude.py")
     with open(fake, "w") as f:
         f.write("import json, os, sys\nsys.stdin.read()\nm = sys.argv[sys.argv.index('--model') + 1]\n"
-                "if 'sonnet' in m and '--tools' in sys.argv and sys.argv[sys.argv.index('--tools') + 1]:\n"
-                "    open('objectives.md', 'w').write('# Objectives\\nNow: beat Vega\\n')\n"  # drops lines, no archive
                 "r = 'NOTE: heal Ion' if 'haiku' in m else 'FIX: objectives are stale'\n"
                 "print(json.dumps({'result': r, 'is_error': False, 'total_cost_usd': 0.001, 'usage': {'output_tokens': 5}}))\n")
     CLAUDE = fake
@@ -323,12 +313,22 @@ if __name__ == "__main__":  # offline self-check with a fake claude
     got = drain(logged.append)
     assert sorted(got) == ["VERIFIER (as of step 20): objectives are stale", "WATCHER (step 20): heal Ion"], got
     assert {e["harness_call"] for e in logged} == {"watcher", "verifier"} and all("cost_usd" in e for e in logged), logged
-    e = curate(ws, "test", direct=True)
-    assert e["archived_lines"] == 1, e
-    assert "- old: reach Crater Town" in open(os.path.join(ws, "memory", "archive.md")).read()
-    assert open(os.path.join(ws, "memory", "todo.md")).read() == "harness owned\n"
     kinds = [json.loads(ln)["kind"] for ln in open(os.path.join(ws, "usage.jsonl"))]
-    assert sorted(kinds) == ["curator", "verifier", "watcher"], kinds
+    assert sorted(kinds) == ["verifier", "watcher"], kinds
+    # memory guard: the agent drops a line and tampers with the pinned hints; objectives.md outgrows its budget
+    with open(os.path.join(ws, "operator.md"), "w") as f:
+        f.write("- hint\n")
+    with open(os.path.join(ws, "memory", "objectives.md"), "w") as f:
+        f.write("# Objectives\nNow: beat Vega\n" + "x" * OBJECTIVES_BUDGET + "\n")
+    with open(os.path.join(ws, "memory", "operator.md"), "w") as f:
+        f.write("agent was here\n")
+    guard(ws, 21)
+    assert "- old: reach Crater Town" in open(os.path.join(ws, "memory", "archive.md")).read()
+    assert open(os.path.join(ws, "memory", "operator.md")).read() == "- hint\n"
+    got = drain()
+    assert len(got) == 1 and got[0].startswith("MEMORY: objectives.md is "), got
+    guard(ws, 22)
+    assert drain() == []  # not again until NAG_EVERY actions later
     assert hygiene(30, ["A", "WATCHDOG: x"]) == ["A", "WATCHDOG: x"]
     assert hygiene(31, ["A", "WATCHDOG: x", "B"]) == ["WATCHDOG: x", "B"]
     assert hygiene(42, ["A"]) == ["A"]

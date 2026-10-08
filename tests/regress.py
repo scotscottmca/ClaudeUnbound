@@ -188,28 +188,28 @@ def watcher_drain_dedupe():
 
 
 @case(emu=False)
-def curator_archives_never_deletes():
+def memory_guard():
+    # No curator model: the harness archives whatever the agent deletes from memory/, keeps the operator's hints
+    # pinned, and nags (once per NAG_EVERY actions) about a file over budget.
     import watcher
-    root = tempfile.mkdtemp(dir=TMP)
-    fake = os.path.join(root, "fake_claude.py")  # "curates" by rewriting a file, dropping a line, archiving nothing
-    open(fake, "w").write("import json, sys\nsys.stdin.read()\nopen('team.md', 'w').write('# Team\\nIon\\n')\n"
-                          "open('todo.md', 'w').write('curator touched it\\n')\n"
-                          "print(json.dumps({'result': 'merged team', 'total_cost_usd': 0.01}))\n")
-    mem = os.path.join(root, "ws", "memory")
+    ws = os.path.join(tempfile.mkdtemp(dir=TMP), "ws")
+    mem = os.path.join(ws, "memory")
     os.makedirs(mem)
-    open(os.path.join(mem, "team.md"), "w").write("# Team\nIon\n- Batty: Lv12, released? no, boxed\n")
-    open(os.path.join(mem, "todo.md"), "w").write("- [ ] read sign\n")
-    old = watcher.CLAUDE
-    watcher.CLAUDE = fake
-    try:
-        e = watcher.curate(os.path.dirname(mem), "test", direct=True)
-    finally:
-        watcher.CLAUDE = old
-    assert e["archived_lines"] == 1 and e["note"] == "merged team", e
-    assert "- Batty: Lv12, released? no, boxed" in open(os.path.join(mem, "archive.md")).read()
-    assert open(os.path.join(mem, "todo.md")).read() == "- [ ] read sign\n"  # harness-owned: restored
-    assert '"harness_call": "curator"' in open(os.path.join(root, "ws", "log.jsonl")).read()
-    assert '"kind": "curator"' in open(os.path.join(root, "ws", "usage.jsonl")).read()
+    open(os.path.join(mem, "team.md"), "w").write("# Team\nIon\n- Batty: Lv12, boxed\n")
+    open(os.path.join(ws, "operator.md"), "w").write("- gym hint\n")
+    watcher.RT.mem, watcher.RT.nagged = None, {}
+    watcher.guard(ws, 1)
+    assert open(os.path.join(mem, "operator.md")).read() == "- gym hint\n"
+    open(os.path.join(mem, "team.md"), "w").write("# Team\nIon\n" + "y" * watcher.FILE_BUDGET)  # Batty line gone
+    open(os.path.join(mem, "operator.md"), "w").write("")
+    watcher.guard(ws, 2)
+    assert "- Batty: Lv12, boxed" in open(os.path.join(mem, "archive.md")).read()
+    assert open(os.path.join(mem, "operator.md")).read() == "- gym hint\n"
+    notes = watcher.drain()
+    assert len(notes) == 1 and notes[0].startswith("MEMORY: team.md is"), notes
+    watcher.guard(ws, 3)
+    assert watcher.drain() == [] and watcher.guard(ws, 2 + watcher.NAG_EVERY) is None and len(watcher.drain()) == 1
+    watcher.RT.mem = None
 
 
 @case(emu=False)

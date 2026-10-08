@@ -88,4 +88,5 @@ Keep each one short and current; merge duplicates; delete what's done or wrong.
 - `npcs.md`: everyone you've talked to, what they said, and who wants you back (and why).
 - `items.md`: every item you hold (count, where it came from, what it does), kept current as you use them.
 - `opponents.md`, `notice_boards.md`, `conversations.md`, `team.md`, `missions.md`.
-- `archive.md`: written by the harness's curator, which tidies memory/ at each new session and each badge (merges duplicates, folds done items, keeps files short). Whatever it removes lands here; look things up in it only when you need an old detail.
+- `archive.md`: written by the harness. Every line you delete from a memory file is copied here automatically, so tidy freely; look things up in it only when you need an old detail.
+- **Keep files short yourself.** `objectives.md` under 2000 characters, the others under 8000. When one grows past that, a `MEMORY:` note asks you to condense it: merge duplicates, fold done items into one `Done:` line, drop what you won't need.

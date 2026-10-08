@@ -754,7 +754,7 @@ def call(name, args):
         log({"step": steps, "tool": name, "args": args, "result": json.dumps(brief, ensure_ascii=False)[:300],
              "now": summary(s), "harness": msgs})
         try:
-            watcher.tick(steps, s, LOG)  # every ~10/20 actions: background watcher/verifier; curator on a badge
+            watcher.tick(steps, s, LOG)  # every ~10/20 actions: background watcher/verifier; memory guard every action
         except Exception as e:
             log({"step": steps, "error": f"watcher tick: {e!r}"})
     else:
