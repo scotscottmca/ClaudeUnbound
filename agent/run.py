@@ -29,19 +29,29 @@ CLAUDE = shutil.which("claude") or os.path.expanduser(r"~\.local\bin\claude.exe"
 CONTEXT_LIMIT = 160_000  # rotate to a fresh session past this (tokens re-read every turn)
 MAIN_MODEL = "claude-haiku-5-5"  # default tier; verified by Sonnet 5.5, escalates to Opus 5.5 then Fable 5.1
 TOOLS = ["mcp__unbound", "Read", "Write", "Edit", "Glob", "Grep", "Task", "Agent"]
-MEMORY_SEED = {"objectives.md": "# Objectives\n\n- Goal: earn the first badge (Dresco Town gym).\n- Next: find out where I am and what the current mission says.\n",
-               "learnings.md": "# Learnings\n\n"}
+# Describe a previous run's save, not this one: left out when bootstrapping (#22).
+RUN_STATE = {"objectives.md", "team.md", "items.md"}
 FIRST = "Start playing. Read memory/ first, then get_state."
+BOOTSTRAP = (" memory/ carries knowledge from a previous run (maps, NPCs, opponents, missions, learnings). The game "
+             "restarted from the beginning: anything there about progress or mission status describes that run, not this one.")
 NEXT = ("Continue playing toward the goal. Keep going for a good stretch (~100 actions) before you stop; "
-        "update memory/objectives.md before you do. If you have earned the first badge, say GOAL REACHED.")
+        "update memory/objectives.md before you do. If you have earned {goal}, say GOAL REACHED.")
 
 
-def setup(ws, fresh, bootstrap):
+def goal_text(badges):
+    return "the first badge" if badges == 1 else f"{badges} badges"
+
+
+def setup(ws, fresh, bootstrap, goal_badges):
     os.makedirs(os.path.join(ws, "memory"), exist_ok=True)
     shutil.copy(os.path.join(REPO, "agent", "CLAUDE.md"), os.path.join(ws, "CLAUDE.md"))
-    if bootstrap:
-        shutil.copytree(os.path.join(bootstrap, "memory"), os.path.join(ws, "memory"), dirs_exist_ok=True)
-    for name, text in MEMORY_SEED.items():
+    if bootstrap and fresh:  # on a resume, memory/ is already this run's
+        shutil.copytree(os.path.join(bootstrap, "memory"), os.path.join(ws, "memory"), dirs_exist_ok=True,
+                        ignore=lambda _d, names: [n for n in names if n in RUN_STATE])
+    seed = {"objectives.md": f"# Objectives\n\n- Goal: earn {goal_text(goal_badges)}.\n"
+                             "- Next: find out where I am and what the current mission says.\n",
+            "learnings.md": "# Learnings\n\n"}
+    for name, text in seed.items():
         path = os.path.join(ws, "memory", name)
         if not os.path.exists(path):
             with open(path, "w", encoding="utf-8") as f:
@@ -68,12 +78,12 @@ def setup(ws, fresh, bootstrap):
     Probe().autosave(os.path.join(ws, "autosaves"), 18000, 12)
 
 
-def chunk(ws, first):
+def chunk(ws, first, prompt_next, prompt_first=FIRST):
     # Re-read every chunk, so the router model can change mid-run without restarting the runner.
     override = os.path.join(ws, "model.txt")
     model = open(override).read().strip() if os.path.exists(override) else MAIN_MODEL
     print(f"  model: {model}")
-    args = [CLAUDE, "-p", FIRST if first else NEXT, "--model", model,
+    args = [CLAUDE, "-p", prompt_first if first else prompt_next, "--model", model,
             "--mcp-config", "mcp.json", "--strict-mcp-config",
             "--agents", open(os.path.join(REPO, "agent", "agents.json"), encoding="utf-8").read(),
             "--allowedTools", *TOOLS, "--output-format", "stream-json", "--verbose"]
@@ -159,13 +169,14 @@ def main():
     a = ap.parse_args()
     if a.fresh and os.path.exists(os.path.join(a.workspace, "transcripts")):
         sys.exit(f"{a.workspace} already has a run; pick a new --workspace for a fresh run")
-    setup(a.workspace, a.fresh, a.bootstrap_from)
+    setup(a.workspace, a.fresh, a.bootstrap_from, a.goal_badges)
     usage_log = os.path.join(a.workspace, "usage.jsonl")
     spent = sum(json.loads(l).get("cost_usd") or 0 for l in open(usage_log, encoding="utf-8")) if os.path.exists(usage_log) else 0
     first = a.fresh or a.new_session or not os.path.exists(usage_log)
     for n in range(a.max_chunks):
         print(f"chunk {n}: {'start' if first else 'continue'} (spent ${spent:.2f} API-equivalent)")
-        res, secs = chunk(a.workspace, first)
+        res, secs = chunk(a.workspace, first, NEXT.format(goal=goal_text(a.goal_badges)),
+                          FIRST + (BOOTSTRAP if n == 0 and a.fresh and a.bootstrap_from else ""))
         text = str(res.get("result", ""))
         wait = limit_wait(text) if res.get("is_error") else None
         entry = {"t": round(time.time()), "chunk": n, "secs": round(secs), "turns": res.get("num_turns"),
