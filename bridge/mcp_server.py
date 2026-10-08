@@ -369,6 +369,13 @@ def t_switch_to(a):
         return {"result": str(e)}
 
 
+def t_throw_ball(a):
+    try:
+        return {"result": battle.throw_ball(p, a.get("ball") or "Poké Ball")}
+    except SystemExit as e:
+        return {"result": str(e)}
+
+
 def t_run_away(a):
     if len(a.get("reason", "").strip()) < 10:
         return {"result": "NOT RUN: wild Pokemon are battled and caught. Run only if you may lose the fight: "
@@ -457,6 +464,9 @@ TOOLS = {
     "switch_to": (t_switch_to, "In battle: send in a party member by name, from the forced 'Choose a Pokemon' "
                   "screen (B can't cancel that one) or from your battle menu.",
                   S({"pokemon": {"type": "string"}}, ["pokemon"]), True),
+    "throw_ball": (t_throw_ball, "In a wild battle: throw a ball by name (e.g. 'Poké Ball') from the bag and "
+                   "follow it to 'caught' (stops at the nickname question) or 'broke free' (your next turn).",
+                   S({"ball": {"type": "string"}}, ["ball"]), True),
     "type_name": (t_type_name, "On a naming screen (nickname, rival): clear the box, type the name (letters "
                   "and spaces) and confirm. Answer the 'Is this name OK?' question that follows yourself.",
                   S({"name": {"type": "string"}}, ["name"]), True),

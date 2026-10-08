@@ -40,6 +40,19 @@ Pockets are arrays of u16 item ID + u16 count, no XOR, in EWRAM:
 - Slots aren't compacted until the bag closes: a used-up item leaves a zero slot first.
 - The bag is "Cube V3", the third icon in Unbound's start-menu bar (Pokédex?, Pokémon List, Cube V3, …, trainer card).
 
+### Battle bag (#94)
+
+| Name | Address | Status | Evidence |
+|---|---|---|---|
+| battle-bag callback2 | 0x08107EE1 | verified | after Cube (action cursor 1) + A in a wild battle; 0x08107F11 for a frame while it opens. Closing on Use: 0x08030AED, 0x080777E9, then `BattleMainCB2` |
+| bag state (`gBagMenuState`-like) | 0x0203ACFC | verified | +0 callback 0x08030AED, +4 location 5 (battle) |
+| open pocket | 0x0203AD02 | verified | u16: 2 Poké Balls, LEFT → 1 (Key Items screen), LEFT → 0; RIGHT stops at 2, LEFT at 0 (only 3 pockets in battle). Reopens on the last pocket used |
+| cursor row per pocket | 0x0203AD04 + 2 × pocket | verified | Key Items: DOWN DOWN read 0 → 2 at 0x0203AD06; Poké Balls: DOWN 0 → 1 (Cancel) at 0x0203AD08 |
+| list scroll per pocket | 0x0203AD0A + 2 × pocket? | pending | 0 with short lists; not read by `throw_ball`, which instead checks the selected name |
+| "<item> is\nselected." | `gStringVar4` | verified | printed when A on a ball opens Use / Cancel (cursor starts on Use) |
+
+- After the throw: "Claude used\nPoké Ball!", then "Gotcha!\nZubat was caught!" (waits for A), exp and level-up messages (the level-up stat box waits for A with no printer active), "…'s data was\nadded to the Pokédex." and its Pokédex page (also A with no printer), then "Give a nickname to the\ncaptured Zubat?" (Yes/No, printer inactive). Yes → naming callback2 0x0809FB71. The party count only rises after the nickname step.
+
 ## Naming screen
 
 | Name | Address | Status | Evidence |
