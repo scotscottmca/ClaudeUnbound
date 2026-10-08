@@ -18,6 +18,8 @@ PLAYER_PARTY_COUNT = 0x02024029
 PLAYER_PARTY = 0x02024284  # 6 x 100, unencrypted on CFRU
 BATTLE_TYPE_FLAGS = 0x02022B4C
 BATTLE_MONS = 0x02023BE4  # 4 x 0x58
+SPECIES_TO_DEX = 0x09A41FEA  # ROM u16[species]: national dex number (found by matching 8 known species; docs/addresses.md)
+DEX_OWNED = 0x38D  # SaveBlock1 offset: 0x7D bytes, bit n-1 = national dex n caught (docs/addresses.md)
 TEXT_PRINTERS = 0x02020034  # 0x24 each, one per window
 NUM_TEXT_PRINTERS = 32
 SCRIPT_CONTEXT = 0x03000EB0  # sScriptContext1: stackDepth, mode (2 = native), pad, nativePtr
@@ -120,6 +122,12 @@ def raw(p):
     return {"cb2": hex(cb2), "locked": locked, "printer": printer, "mode": mode, "script": ctx[1]}
 
 
+def caught(p, species):
+    """True if the Pokedex marks this species (internal id) as caught."""
+    n = p.read16(SPECIES_TO_DEX + 2 * species)
+    return bool(n) and bool(p.read8(p.read32(SB1_PTR) + DEX_OWNED + (n - 1) // 8) >> ((n - 1) % 8) & 1)
+
+
 def get_state(p):
     r = raw(p)
     sb1 = p.read32(SB1_PTR)
@@ -177,7 +185,8 @@ def get_state(p):
                 "species": NAMES["species"][species], "level": level, "hp": f"{hp}/{max_hp}",
                 "types": types, "ability": NAMES["abilities"][b[0x20]],
                 "status": status_name(struct.unpack("<I", b[0x4C:0x50])[0]),
-                **({"moves": moves(struct.unpack("<4H", b[0x0C:0x14]), b[0x24:0x28])} if i % 2 == 0 else {}),
+                **({"moves": moves(struct.unpack("<4H", b[0x0C:0x14]), b[0x24:0x28])} if i % 2 == 0
+                   else {"caught": caught(p, species)}),  # already caught: defeat it or run, don't re-catch
             })
         s["battle"]["text"] = decode(p.range(DISPLAYED_STRING_BATTLE, 0x100))
     if r["mode"] == "dialog":

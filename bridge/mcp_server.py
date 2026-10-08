@@ -33,6 +33,7 @@ import items
 import milestones
 import moves
 import naming
+import state as state_mod
 import wiki
 import world as W
 from probe import Probe
@@ -466,8 +467,11 @@ def t_use_item(a):
 
 
 def t_run_away(a):
+    foe = struct.unpack("<H", p.range(BATTLE_MONS + 0x58, 2))[0]
+    if foe and state_mod.caught(p, foe):  # already caught: fleeing is fine (user rule, 2026-10-08)
+        a = {**a, "reason": a.get("reason") or "already caught this species"}
     if len(a.get("reason", "").strip()) < 10:
-        return {"result": "NOT RUN: wild Pokemon are battled and caught. Run only if you may lose the fight: "
+        return {"result": "NOT RUN: wild Pokemon you haven't caught are battled and caught. Run only if you may lose the fight: "
                           "call run_away again with reason explaining why (HP, levels, type matchup)."}
     log({"step": steps, "run_away_reason": a["reason"][:300]})
     try:

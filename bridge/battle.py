@@ -8,7 +8,7 @@ press through them.
 import struct
 
 from naming import NAMING_CB2
-from state import BATTLE_MONS, DISPLAYED_STRING_BATTLE, NAMES, PLAYER_PARTY, STRING_VAR4, decode, get_state, raw
+from state import BATTLE_MONS, DISPLAYED_STRING_BATTLE, NAMES, PLAYER_PARTY, STRING_VAR4, caught, decode, get_state, raw
 
 CONTROLLERS = 0x03004FE0  # gBattlerControllerFuncs, u32 per battler
 ACTION_MENU, MOVE_MENU = 0x0802E439, 0x0802EA11
@@ -209,6 +209,9 @@ def throw_ball(p, ball="Poké Ball"):
     """Wild battle: Bag -> Poke Balls -> BALL -> Use, then follow the throw to its result."""
     if p.read32(BATTLE_TYPE_FLAGS) & TRAINER and raw(p)["mode"] == "battle":
         raise SystemExit("this is a trainer battle: you can't catch a trainer's Pokemon")
+    foe = struct.unpack("<H", p.range(BATTLE_MONS + 0x58, 2))[0]
+    if foe and caught(p, foe):
+        raise SystemExit(f"{NAMES['species'][foe]} is already caught: no need to catch it again. Defeat it or run.")
     pocket = struct.unpack(f"<{2 * BALL_SLOTS}H", p.range(BALL_POCKET, 4 * BALL_SLOTS))
     balls = [NAMES["items"][pocket[i]] for i in range(0, len(pocket), 2) if pocket[i] and pocket[i + 1]]
     row = next((i for i, n in enumerate(balls) if _plain(n) == _plain(ball)), None)

@@ -96,6 +96,13 @@ Pockets are arrays of u16 item ID + u16 count, no XOR, in EWRAM:
 
 - Lower/upper pages match FireRed's grid (`abcdef .` / `ghijkl ,` / `mnopqrs ` / `tuvwxyz `), mapped by typing each key and reading the buffer. Typing a capital switches to lower case automatically.
 
+## Pokédex
+
+| Name | Address | Status | Evidence |
+|---|---|---|---|
+| species → national dex | ROM 0x09A41FEA, u16[internal species id] | verified | The only ROM offset where 8 known species line up (Bulbasaur 1, Zubat 41, Swinub 220, Treecko 252, Makuhita 296, Beldum 374, Gible 443, Patrat 504; internal ids 1, 41, 220, 277, 335, 398, 496, 557). Decoding the live owned flags through it gives exactly the run's catches plus party (14 species) |
+| owned flags | SaveBlock1 +0x38D, 0x7D bytes, bit n-1 = national n | verified | see the UI notes; `state.caught(p, species)` reads it |
+
 ## ROM name tables (#6)
 
 `bridge/tables.py` builds `bridge/names.json` from these, checking each against known names:
