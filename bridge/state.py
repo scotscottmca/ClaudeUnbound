@@ -17,6 +17,8 @@ OBJECT_EVENTS = 0x02036E38  # 16 x 0x24, player is localId 0xFF
 PLAYER_PARTY_COUNT = 0x02024029
 PLAYER_PARTY = 0x02024284  # 6 x 100, unencrypted on CFRU
 BATTLE_TYPE_FLAGS = 0x02022B4C
+PARTY_SCREEN_CB2 = 0x0811EBA1  # party menu callback2 (battle and field; docs/addresses.md)
+PARTY_MENU = 0x0203B0A0  # gPartyMenu: +9 cursor slot (grid 0 1 / 2 3 / 4 5, OK 6, Cancel 7)
 PARTNER_BATTLE = 0x400000  # battle flag with an NPC partner (Cinder Volcano 0x40000d/0x400005); its team fills party slots 4-6
 BATTLE_MONS = 0x02023BE4  # 4 x 0x58
 SPECIES_TO_DEX = 0x09A41FEA  # ROM u16[species]: national dex number (found by matching 8 known species; docs/addresses.md)
@@ -205,8 +207,13 @@ def _snapshot(p):
     x, y, group, num = struct.unpack("<hhbb", p.range(p.read32(SB1_PTR), 6))
     player = p.range(OBJECT_EVENTS, 0x24)  # the player is object event 0 (gPlayerAvatar.objectEventId)
     pr = r["printer"]
-    return {"map": (group, num), "pos": (x, y), "facing": FACING.get(player[0x18] & 0xF),
+    snap = {"map": (group, num), "pos": (x, y), "facing": FACING.get(player[0x18] & 0xF),
             "mode": r["mode"], "cb2": r["cb2"], "locked": r["locked"], "printer": (pr[0x1B], pr[0x1C], pr[0:4].hex())}
+    if r["cb2"] == hex(PARTY_SCREEN_CB2):
+        # On the party screen presses only move the cursor: without this every press read "changed: []" and the
+        # agent pressed blind for ~20 actions on a choose-3 screen (OK is slot 6, Cancel 7).
+        snap["party_cursor"] = p.read8(PARTY_MENU + 9)
+    return snap
 
 
 def press(p, key, frames=4, settle=16):
