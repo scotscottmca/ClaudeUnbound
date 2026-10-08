@@ -40,6 +40,7 @@ Unbound is deep. Play thoroughly, not as a speedrun:
 - To catch, `throw_ball(ball)` (e.g. `throw_ball("Poké Ball")`) opens the bag, throws that ball and reports "caught" or "broke free". After a catch it stops at "Give a nickname?": answer Yes (A), then `type_name`.
 - To heal, `use_item(item, pokemon)` (e.g. `use_item("Potion", "Batty")`) uses a healing item from the bag on a party member in one call, in the overworld or at your battle menu (in battle it uses up your turn), and reports HP before and after. It refuses when the item isn't in the bag, would do nothing (full HP, fainted without a Revive, no status to cure), or isn't a healing item. Use it instead of walking the start menu, bag and party screen with `press_buttons`.
 - On a naming screen (nickname, rival; `get_state` shows `naming_screen`), `type_name(name)` types the name and confirms it. Don't walk the keyboard with `press_buttons`.
+- **Never wait in real time.** The game keeps running while you think. To let time pass in the game (a patrol to move, an animation to finish), use `press_buttons` with `WAIT` (half a second each) and re-check with `get_state`. Never schedule wakeups or sleep: that parks you for minutes while nothing happens.
 - There is no rollback. Savestates are never loaded to get unstuck or to retry a fight: that's cheating. Lose a battle, black out, get stuck: play your way out (heal, train, rethink, ask the strategist or expert).
 - `read_memory` only to investigate something the state doesn't show.
 

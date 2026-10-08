@@ -30,6 +30,9 @@ CLAUDE = shutil.which("claude") or os.path.expanduser(r"~\.local\bin\claude.exe"
 CONTEXT_LIMIT = 160_000  # rotate to a fresh session past this (tokens re-read every turn)
 MAIN_MODEL = "claude-haiku-5-5"  # default tier; verified by Sonnet 5.5, escalates to Opus 5.5 then Fable 5.1
 TOOLS = ["mcp__unbound", "Read", "Write", "Edit", "Glob", "Grep", "Task", "Agent"]
+# Scheduling/waiting tools park the session in wall-clock time while the game runs on: the agent once called
+# ScheduleWakeup(1200 s) to "wait for a gym guard's window" and sat idle for 20 minutes. Wait in game time (WAIT).
+BLOCKED = ["ScheduleWakeup", "CronCreate", "CronDelete", "CronList", "Monitor", "RemoteTrigger", "PushNotification"]
 # Describe a previous run's save, not this one: left out when bootstrapping (#22).
 RUN_STATE = {"objectives.md", "team.md", "items.md"}
 FIRST = "Start playing. Read memory/ first, then get_state."
@@ -91,7 +94,7 @@ def chunk(ws, first, prompt_next, prompt_first=FIRST):
     args = [CLAUDE, "-p", prompt_first if first else prompt_next, "--model", model,
             "--mcp-config", "mcp.json", "--strict-mcp-config",
             "--agents", open(os.path.join(REPO, "agent", "agents.json"), encoding="utf-8").read(),
-            "--allowedTools", *TOOLS, "--output-format", "stream-json", "--verbose"]
+            "--allowedTools", *TOOLS, "--disallowedTools", *BLOCKED, "--output-format", "stream-json", "--verbose"]
     if not first:
         args.insert(3, "--continue")
     os.makedirs(os.path.join(ws, "transcripts"), exist_ok=True)
