@@ -216,9 +216,11 @@ def notes(s):
                           if watchdog_fired >= 2 else ""))
     global verify_due
     if steps and steps % VERIFY_EVERY == 0 and steps % LEARN_EVERY:
-        verify_due = verify_due or steps
-        out.append(f"VERIFY (action {steps}): ask the verifier subagent to check the last stretch against the game "
-                   "state: what you did, what you believe, what you plan next. Follow its corrections.")
+        # Routine checks no longer block play (user, 2026-10-08): spawn the verifier in the background and apply
+        # its correction when it arrives. Only irreversible prompts below still gate actions.
+        out.append(f"VERIFY (action {steps}): spawn the verifier subagent in the background with what you did, believe "
+                   "and plan next, and KEEP PLAYING. When its verdict arrives, apply any correction (reroute, fix a "
+                   "belief); it refers to this step.")
     # Battle prompts too: "Delete a move?" when learning a fifth move happens inside battle.
     text = (s.get("dialog") or (s.get("battle") or {}).get("text") or "").lower()
     global last_prompt
