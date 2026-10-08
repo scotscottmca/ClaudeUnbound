@@ -77,25 +77,62 @@ _links = {}
 
 
 def map_links(_p, group, num):
-    """Maps reachable in one hop from (group, num): connections and warps, from the ROM header."""
+    """Maps you can walk to in one hop from (group, num): warps and connections, from the ROM."""
     p = rom()
     if (group, num) not in _links:
-        header = header_of(p, group, num)
-        events, _, connections = struct.unpack("<III", p.range(header + 4, 12))
+        here = rom_world(group, num)
         out = set()
-        n_warp = p.range(events, 4)[1]
-        warp_ptr = u32(p, events + 8)
+        events = u32(p, header_of(p, group, num) + 4)
+        n_warp, warp_ptr = p.range(events, 4)[1], u32(p, events + 8)
         for i in range(n_warp):
-            _, _, _, _, wnum, wgroup = struct.unpack("<hhBBBB", p.range(warp_ptr + 8 * i, 8))
-            if (wgroup, wnum) != (0x7F, 0x7F):  # dynamic warp: destination decided at runtime
+            x, y, _, _, wnum, wgroup = struct.unpack("<hhBBBB", p.range(warp_ptr + 8 * i, 8))
+            if (wgroup, wnum) != (0x7F, 0x7F) and not _buried(here, x, y):  # 0x7F: dynamic, decided at runtime
                 out.add((wgroup, wnum))
-        if connections:
-            count, ptr = struct.unpack("<iI", p.range(connections, 8))
-            for i in range(count):
-                _, _, _, _, _, cgroup, cnum = struct.unpack("<BBBBiBB", p.range(ptr + 12 * i, 10))
-                out.add((cgroup, cnum))
+        out |= {tuple(c["to_map"]) for c in here["connections"] if _walkable_seam(here, c)}
         _links[(group, num)] = out
     return _links[(group, num)]
+
+
+def seam(w, c):
+    """[((x, y) on this map, (x, y) on the other map)] for each tile pair across connection C of world W."""
+    p = rom()
+    ow, oh = struct.unpack("<ii", p.range(u32(p, header_of(p, *c["to_map"])), 8))
+    off, d = c["offset"], c["direction"]
+    if d in ("north", "south"):
+        y, oy = (w["height"] - 1, 0) if d == "south" else (0, oh - 1)
+        return [((x, y), (x - off, oy)) for x in range(max(0, off), min(w["width"], off + ow))]
+    if d in ("east", "west"):
+        x, ox = (w["width"] - 1, 0) if d == "east" else (0, ow - 1)
+        return [((x, y), (ox, y - off)) for y in range(max(0, off), min(w["height"], off + oh))]
+    return []  # dive/emerge
+
+
+def _buried(w, x, y):
+    """A warp event inside solid rock (it and every neighbour have collision) can't be walked into: Route 4's
+    (112,7)/(113,7) to KBT Expressway, and the (0,0) placeholders. Scripts may still warp you by its ID."""
+    near = [(x + dx, y + dy) for dx, dy in ((0, 0), (1, 0), (-1, 0), (0, 1), (0, -1))
+            if 0 <= x + dx < w["width"] and 0 <= y + dy < w["height"]]
+    return (x, y) in near and all(w["tile"](*t)[1] for t in near)
+
+
+def _walkable_seam(here, c):
+    """Can you walk across connection C (from HERE, a rom_world) between the two maps' main areas?
+    Route 4 -> Route 5 can't: Route 4's side of that seam is 5 tiles of shore in a lake walled off from the
+    rest of Route 4, so route() must go round. Water seams count as closed (the planner doesn't surf).
+    ponytail: authored layout only; a map script that setmetatiles a seam open at runtime isn't seen."""
+    import bot  # bot imports world
+    there = rom_world(*c["to_map"])
+
+    def open_(w, t):  # walkable, and not a pocket smaller than bot.POCKET
+        beh, col, elev = w["tile"](*t)
+        if col or beh in bot.AVOID:
+            return False
+        seen = set()
+        # A bridge tile (15) keeps whatever level you walked on with: start unconstrained (0), like stairs.
+        bot.plan(dict(w, player=list(t), elevation=0 if elev == 15 else elev, npcs=[]), set(), set(),
+                 visit=seen, limit=bot.POCKET)
+        return len(seen) >= bot.POCKET
+    return any(open_(here, a) and open_(there, b) for a, b in seam(here, c))
 
 
 def doors(group, num):
@@ -145,21 +182,68 @@ def read_world(p):
     else:
         raise ValueError(f"VMap {vw}x{vh} doesn't match layout {w}x{h}")
     blocks = struct.unpack(f"<{vw * vh}H", p.range(vptr, vw * vh * 2))
+    tile = _tiler(p, prim, sec, lambda x, y: blocks[(y + BORDER_Y) * vw + x + BORDER_X])
+
+    npcs, player = [], None
+    evs = p.range(OBJECT_EVENTS, 16 * 0x24)
+    for i in range(16):
+        ev = evs[i * 0x24:(i + 1) * 0x24]
+        if not ev[0] & 1:
+            continue
+        x, y = (c - 7 for c in struct.unpack("<hh", ev[0x10:0x14]))
+        if ev[8] == 0xFF:
+            player, player_elev = (x, y), ev[0x0B] & 0xF
+            continue
+        npcs.append({"id": ev[8], "x": x, "y": y, "facing": FACING.get(ev[0x18] & 0xF),
+                     "trainer": bool(ev[7]), "graphics": ev[5], **({"item": True} if ev[5] == ITEM_BALL else {})})
+    return _world(p, w, h, tile, events, connections, npcs, player, player_elev)
+
+
+def rom_world(group, num, start=None, elevation=None):
+    """read_world's dict for map (GROUP, NUM) from the ROM alone: the layout's block map as authored
+    (map scripts that set metatiles at runtime aren't applied), object events at their initial
+    positions, PLAYER = START (or None) on ELEVATION (default: the start tile's)."""
+    p = rom()
+    layout, events, _, connections = struct.unpack("<IIII", p.range(header_of(p, group, num), 16))
+    w, h, _, mapdata, prim, sec = struct.unpack("<iiIIII", p.range(layout, 24))
+    blocks = struct.unpack(f"<{w * h}H", p.range(mapdata, w * h * 2))
+    tile = _tiler(p, prim, sec, lambda x, y: blocks[y * w + x])
+    n_obj, objs = p.range(events, 1)[0], u32(p, events + 4)
+    npcs = []
+    for i in range(n_obj):  # ObjectEventTemplate, 24 bytes: localId, graphicsId, kind, _, x, y, ..., trainerType @12
+        lid, gfx, _, _, x, y = struct.unpack("<BBBBhh", p.range(objs + 24 * i, 8))
+        trainer = struct.unpack("<H", p.range(objs + 24 * i + 12, 2))[0]
+        npcs.append({"id": lid, "x": x, "y": y, "facing": None, "trainer": bool(trainer), "graphics": gfx,
+                     **({"item": True} if gfx == ITEM_BALL else {})})
+    if start and elevation is None:
+        elevation = tile(*start)[2]
+        elevation = 0 if elevation == 15 else elevation  # a bridge keeps your level: unknown here, so unconstrained
+    return _world(p, w, h, tile, events, connections, npcs, tuple(start) if start else None, elevation or 0)
+
+
+def _tiler(p, prim, sec, block):
+    """tile(x, y) -> (behavior, collision, elevation) for a block map: metatile id in bits 0-9,
+    collision 10-11, elevation 12-15; behaviors from the tilesets' attribute tables."""
     attrs = (struct.unpack(f"<{PRIMARY_METATILES}I", p.range(u32(p, prim + 0x14), PRIMARY_METATILES * 4)),
              struct.unpack("<384I", p.range(u32(p, sec + 0x14), 384 * 4)))
 
-    def tile(x, y):  # map coords -> (behavior, collision, elevation)
-        b = blocks[(y + BORDER_Y) * vw + x + BORDER_X]
+    def tile(x, y):
+        b = block(x, y)
         mt = b & 0x3FF
         a = attrs[0][mt] if mt < PRIMARY_METATILES else attrs[1][mt - PRIMARY_METATILES]
         return a & 0x1FF, (b >> 10) & 3, b >> 12
+    return tile
 
-    n_obj, n_warp, _, n_bg = p.range(events, 4)
+
+def _world(p, w, h, tile, events, connections, npcs, player, player_elev):
+    _, n_warp, _, n_bg = p.range(events, 4)
     _, warp_ptr, _, bg_ptr = struct.unpack("<IIII", p.range(events + 4, 16))
     warps = []
     for i in range(n_warp):
         x, y, _, _, num, group = struct.unpack("<hhBBBB", p.range(warp_ptr + 8 * i, 8))
-        warps.append({"x": x, "y": y, "to": map_name(p, group, num), "to_map": [group, num]})
+        # (0x7F, 0x7F) is a dynamic warp (Hidden Grotto's exits): back to where you came from; no header to name.
+        to = "where you came from" if (group, num) == (0x7F, 0x7F) else map_name(p, group, num)
+        warps.append({"x": x, "y": y, "to": to, "to_map": [group, num]})
     signs = []
     for i in range(n_bg):
         x, y, _, kind = struct.unpack("<HHBB", p.range(bg_ptr + 12 * i, 6))
@@ -176,23 +260,11 @@ def read_world(p):
             conns.append({"direction": CONNECTION[d], "to": map_name(p, group, num), "to_map": [group, num],
                           "offset": offset})
 
-    npcs, player = [], None
-    evs = p.range(OBJECT_EVENTS, 16 * 0x24)
-    for i in range(16):
-        ev = evs[i * 0x24:(i + 1) * 0x24]
-        if not ev[0] & 1:
-            continue
-        x, y = (c - 7 for c in struct.unpack("<hh", ev[0x10:0x14]))
-        if ev[8] == 0xFF:
-            player, player_elev = (x, y), ev[0x0B] & 0xF
-            continue
-        npcs.append({"id": ev[8], "x": x, "y": y, "facing": FACING.get(ev[0x18] & 0xF),
-                     "trainer": bool(ev[7]), "graphics": ev[5], **({"item": True} if ev[5] == ITEM_BALL else {})})
-
     special = {(s["x"], s["y"]): "S" for s in signs}
     special |= {(wp["x"], wp["y"]): "D" for wp in warps}
     special |= {(n["x"], n["y"]): "T" if n["trainer"] else "o" if n.get("item") else "N" for n in npcs}
-    special[player] = "@"
+    if player:
+        special[player] = "@"
 
     def char(x, y):
         if (x, y) in special:
@@ -213,7 +285,7 @@ def read_world(p):
         return ("~" if beh in WATER else "W" if beh == 0x13 else "I" if beh in ICE else "F" if beh in FORCED
                 else "G" if beh == 0x02 else "D" if beh in WARP else ".")
 
-    return {"width": w, "height": h, "player": list(player), "elevation": player_elev, "tile": tile, "char": char,
+    return {"width": w, "height": h, "player": list(player) if player else None, "elevation": player_elev, "tile": tile, "char": char,
             "npcs": npcs, "warps": warps, "signs": signs, "connections": conns}
 
 
