@@ -80,6 +80,8 @@ def setup(ws, fresh, bootstrap, goal_badges):
 
 
 def chunk(ws, first, prompt_next, prompt_first=FIRST):
+    # Refreshed every chunk: instruction fixes reach a long run without restarting the runner.
+    shutil.copy(os.path.join(REPO, "agent", "CLAUDE.md"), os.path.join(ws, "CLAUDE.md"))
     # Re-read every chunk, so the router model can change mid-run without restarting the runner.
     override = os.path.join(ws, "model.txt")
     model = open(override).read().strip() if os.path.exists(override) else MAIN_MODEL
