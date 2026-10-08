@@ -128,7 +128,9 @@ def party_cursor_to(p, target):
     under the right; single layout: slot 0 on the left, 1-5 down the right."""
     for _ in range(12):
         b = p.range(PARTY_MENU, 10)
-        slot, double = b[9], (b[8] >> 4) & 3 == 1
+        # Unbound's battle party screen is always the two-column grid (0 1 / 2 3 / 4 5, Cancel 7), even when the
+        # layout byte says single: walked on a single trainer battle with five Pokemon (slots 2-4 unreachable before).
+        slot, double = b[9], True
         if slot == target:
             return True
         if double:
