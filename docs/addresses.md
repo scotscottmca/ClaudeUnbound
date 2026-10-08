@@ -58,7 +58,7 @@ Pockets are arrays of u16 item ID + u16 count, no XOR, in EWRAM:
 | Name | Address | Status | Evidence |
 |---|---|---|---|
 | battle party-screen callback2 | 0x0811EBA1 | verified | forced and chosen switch screens; 0x0811EBD1 for ~6 frames while it opens, 0x080777E9 for ~8 frames while it closes |
-| `gPartyMenu` | 0x0203B0A0 | verified | +9 cursor slot (menu row), (+8 >> 4) & 3 == 1 double layout (`battle.party_cursor_to`) |
+| `gPartyMenu` | 0x0203B0A0 | verified | +9 cursor slot (menu row), (+8 >> 4) & 3 == 1 double layout byte. The battle screen is always the two-column grid regardless (0 1 / 2 3 / 4 5, Cancel 7; walked: RIGHT 0→1, DOWN 1→3, LEFT 3→2, DOWN 2→4, RIGHT 4→7) |
 | `gBattlePartyCurrentOrder` | 0x0203B0DC (`gPartyMenu` + 0x3C) | plausible | 3 bytes, one nibble per menu row, high nibble first. `01 23 45` at the start of a wild battle; `10 23 45` after switching Ion (field 0) out for Makuhita (field 1); on a forced-switch screen `15 42 03` with menu Ice, Pearl, Dusl, cob, Owl, Chomp, which read as "row i shows field slot nibble(i)" gives exactly the later overworld order. **But** in a 4-member double battle it read `14 02 35` with field Ion, Makuhita, Makuhita, Batty and menu Ion, Batty, Makuhita, Makuhita, which fits neither direction. Not used by code |
 | `gBattlerPartyIndexes` | 0x02023BCE | verified | u16 per battler, a **field** slot: battler 0 read 0 (Ion) → 1 after Makuhita was sent in, while field order stayed Ion, Makuhita. Double: battler 0 = 0 (Ion), battler 2 = 3 (Batty, field slot 3) |
 | `gBattleMons` +0x48 | personality | verified | equals the party mon's +0 (Ion 0x2B97B956, Batty 0xC51DAF1D in a double). `switch_to` uses it to tell who is in battle, independent of party order and duplicate names |
