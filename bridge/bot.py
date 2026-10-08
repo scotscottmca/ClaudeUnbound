@@ -164,6 +164,10 @@ MARGIN = 6  # frames of slack each side of a tile's exposure against an exactly 
 CLOCK = G_MAIN + 0x24  # gMain.vblankCounter2: the frame count each object read is stamped with
 TURNS = {}  # (group, num, id) -> {facing: farthest tile it reached in that facing before turning}, learned
 SEEDED = set()  # (group, num, id) whose TURNS were seeded from the template (once: a contradicted seed is re-learnt)
+# Objects load about 11 tiles out from the player (Crater gym, user demo). A template whose start is well inside that
+# and still isn't loaded is hidden by a flag (Crater gym id 10 at (15,6): never loaded, the player stood at (14,6)).
+IN_VIEW = (9, 5)  # x, y: under the 11 and 6 seen loading
+HIDDEN = set()  # (group, num, id). ponytail: never forgotten; a flag set later (an object appearing) re-adds it live
 # Vanilla WalkBackAndForth: it sets off this way from its start and turns at the end of its movement range and back
 # at its start, so it patrols start .. start +- range. Verified on guard 7 (0x1B, (18,27), range 9: x 9..18).
 SET_OFF = {0x19: "up", 0x1A: "down", 0x1B: "left", 0x1C: "right"}
@@ -477,7 +481,9 @@ def sneak(p, target, max_steps=80, max_wait=2400):
                   "re-learning its turning points")
         seen = _seer(w, now, models, turns_of)
         live = {n["id"] for n in npcs}
-        ghosts = [n for n in templates if n["id"] not in live]
+        HIDDEN.update((g, num, n["id"]) for n in templates if n["id"] not in live
+                      and abs(n["x"] - here[0]) <= IN_VIEW[0] and abs(n["y"] - here[1]) <= IN_VIEW[1])
+        ghosts = [n for n in templates if n["id"] not in live and (g, num, n["id"]) not in HIDDEN]
         if [n["id"] for n in ghosts] != ghost_ids:  # a watcher came on screen (or went off): re-plan around it
             ghost_ids, path, ladders = [n["id"] for n in ghosts], None, {}
             lines = unseen(w, ghosts)
@@ -549,7 +555,9 @@ def sneak(p, target, max_steps=80, max_wait=2400):
                 who = _who(w, bad, ghosts, turns_of)
                 if bad in lines:
                     raise SystemExit(f"stopped at {here} (a safe tile): the way on crosses {bad}, watched by {who}. Waiting "
-                                     "won't bring it on screen; come at it another way, or from nearer its start.")
+                                     "won't bring it on screen: sneak_to a safe tile nearer its start (within "
+                                     f"{IN_VIEW[0]} tiles across, {IN_VIEW[1]} up/down). If it doesn't load there, it "
+                                     "isn't on the map (hidden) and stops counting; if it does, it's tracked live.")
                 if waited >= max_wait:
                     raise SystemExit(f"stopped at {here} (a safe tile) after waiting {waited} frames (~{waited / 60:.0f} s "
                                      f"of game time): the way on stayed watched at {bad} by {who or 'a watcher'}.")
