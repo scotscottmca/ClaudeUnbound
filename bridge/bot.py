@@ -216,7 +216,7 @@ def go(p, target, reroute=True):
             # map, but not actually in the town"). Learn the edge and don't count it as arriving.
             room = reachable(W.read_world(p))
             if room < POCKET:
-                (g, n), (ex, ey) = crossed
+                (g, n), (ex, ey), _ = crossed
                 _note_dead_edge(f"{g},{n},{ex},{ey}")
                 msg = (f"that edge from {W.map_name(p, g, n)} ({ex}, {ey}) leads into a dead-end pocket of "
                        f"{s['map']['name']} ({room} tiles reachable). Learned: it's avoided from now on.")
