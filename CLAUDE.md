@@ -46,7 +46,7 @@ Layered per `docs/research.md`: thin, verified state layer + deterministic tools
 - **`state.py`** holds the verified RAM constants and `get_state()`. Mode (`overworld`/`battle`/`dialog`/`other`) is derived from `gMain.callback2`, `sLockFieldControls` (the only start-menu signal) and text-printer activity, not from `gBattleTypeFlags`, which is never cleared after battle. Party data is CFRU's unencrypted layout; use `gPlayerPartyCount`, not the save block copy. `press()` diffs a small snapshot rather than the screen (weather animates every frame).
 - **`world.py`** reads the live map layout (`gBackupMapLayout`, 7-tile border) and metatile behaviors into a grid that accounts for elevation, ledges, water, ice, forced movement and warps; map headers come from an XOR-obfuscated group table in ROM.
 - **`tables.py`/`names.json`**: species/move/ability/item/map-section names extracted from the ROM. Unbound has its own ability numbering; each table is checked against known entries so a different ROM fails loudly.
-- **`bot.py`**: elevation-aware Dijkstra over the grid, flees wild battles, logs every step, and stops with a screenshot on a stall or an unrecognised screen instead of guessing.
+- **`bot.py`**: elevation-aware Dijkstra over the grid, flees wild battles, logs every step, and stops with a screenshot on a stall or an unrecognised screen instead of guessing. `sneak()` (the `sneak_to` tool) walks past trainers' sight lines, including patrollers; the mechanics it handles are listed in `docs/gym-mechanics.md`.
 
 Every RAM/ROM address must be recorded in `docs/addresses.md` with its status (verified / plausible / pending) and evidence. Don't use an unverified address as if it were verified.
 

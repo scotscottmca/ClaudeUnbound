@@ -10,6 +10,8 @@ only that mGBA. It refuses while any mGBA runs: one mGBA at a time, ever. Fixtur
     UNBOUND_FIXTURES   savestates (default D:\\ClaudeUnboundRuns\\fixtures)
     UNBOUND_ROM        ROM to copy (default run/Unbound.gba, or the main checkout's from a worktree)
 """
+import contextlib
+import io
 import os
 import shutil
 import socket
@@ -264,6 +266,140 @@ def planner_synthetic():
     gap = {(0, 0): (0, 0, 3), (1, 0): (W.HOP, 0, 1), (2, 0): (0, 0, 3)}
     assert bot.plan(world(gap, (0, 0), 3), {(2, 0)}, set()) == ["RIGHT"]
     assert bot.plan(world(gap, (0, 0), 3), {(1, 0)}, set()) is None
+
+
+class PatrolGame:
+    """Frame-stepped stand-in for a patrol corridor (modelled on Crater Town gym, measured read-only): one guard
+    walking back and forth a tile per 16 frames and turning at its ends in the same step, the player (8 frames a
+    tile, 8 more to turn), and the game's sight check on every frame the player isn't mid-step. Reads cost a frame,
+    as over the socket. CAUGHT marks a catch; LOG is (frame, player, guard) per frame."""
+    SB1 = 0x0202552C
+
+    def __init__(self, tiles, player, guard, ends, sight=1):
+        self.tiles, self.pos, self.facing, self.g, self.ends, self.sight = tiles, player, "up", guard, ends, sight
+        self.f = self.gt = self.hold = self.moving = self.turning = 0
+        self.held, self.caught, self.log = None, False, []
+
+    def open(self, t):
+        return t in self.tiles
+
+    def sees(self):
+        x, y, f = self.g
+        dx, dy = bot.DIRS[f.upper()]
+        for i in range(1, self.sight + 1):
+            t = (x + dx * i, y + dy * i)
+            if not self.open(t):
+                return False
+            if t == self.pos:
+                return True
+        return False
+
+    def frame(self):
+        self.f += 1
+        self.gt += 1
+        if self.gt == 16:
+            self.gt = 0
+            x, y, f = self.g
+            dx, dy = bot.DIRS[f.upper()]
+            if (x, y) == self.ends[f] or not self.open((x + dx, y + dy)) or (x + dx, y + dy) == self.pos:
+                f, dx, dy = bot.OPPOSITE[f], -dx, -dy
+            nxt = (x + dx, y + dy)
+            self.g = (*nxt, f) if self.open(nxt) and nxt != self.pos else (x, y, f)
+        if self.moving:
+            self.moving -= 1
+        elif self.turning:
+            self.turning -= 1
+        if self.hold > 0 and not self.moving and not self.turning:
+            if self.facing != self.held.lower():
+                self.facing, self.turning = self.held.lower(), 8
+            else:
+                dx, dy = bot.DIRS[self.held]
+                nxt = (self.pos[0] + dx, self.pos[1] + dy)
+                if self.open(nxt) and nxt != self.g[:2]:
+                    self.pos, self.moving = nxt, 8
+        self.hold = max(self.hold - 1, 0)
+        if not self.moving and self.sees():
+            self.caught = True
+        self.log.append((self.f, self.pos, self.g))
+
+    # Probe surface used by bot.sneak / bot.stride
+    def read32(self, a):
+        self.frame()
+        return self.SB1
+
+    def range(self, a, n):
+        self.frame()
+        if a == self.SB1:
+            return struct.pack("<hhbb", *self.pos, 6, 2)[:n]
+        if a == self.SB1 + 4:
+            return bytes([6, 2])[:n]
+        if a == W.OBJECT_EVENTS + 0x18:
+            return bytes([{v: k for k, v in W.FACING.items()}[self.facing]])
+        raise AssertionError(hex(a))
+
+    def step(self, n):
+        for _ in range(n):
+            self.frame()
+
+    def press(self, key, n):
+        self.held, self.hold = key, n
+        self.step(n)
+
+
+def sneak_with(game, target, **kw):
+    """Run bot.sneak on GAME with the world and mode reads pointed at it. Returns (SystemExit text or None, output)."""
+    def world(_p=None):
+        x, y, f = game.g
+        return {"width": 16, "height": 4, "player": list(game.pos), "elevation": 3, "warps": [], "signs": [],
+                "connections": [], "tile": lambda x, y: (0, 0 if game.open((x, y)) else 1, 3),
+                "npcs": [{"id": 7, "x": x, "y": y, "facing": f, "trainer": True, "graphics": 22, "sight": getattr(game, "shown", game.sight),
+                          "movement": 0x1B}]}
+    saved = W.read_world, W.objects, bot.raw, bot.get_state
+    W.read_world = world
+    W.objects = lambda _p: (world()["npcs"], game.pos, 3)
+    bot.raw = lambda _p: {"mode": "other" if game.caught else "overworld"}
+    bot.get_state = lambda _p: {"pos": list(game.pos), "dialog": "Gotcha!" if game.caught else None}
+    bot.TURNS.clear()
+    buf = io.StringIO()
+    try:
+        with contextlib.redirect_stdout(buf):
+            bot.sneak(game, target, **kw)
+        return None, buf.getvalue()
+    except SystemExit as e:
+        return str(e), buf.getvalue()
+    finally:
+        W.read_world, W.objects, bot.raw, bot.get_state = saved
+
+
+@case(emu=False)
+def sneak_to_patrol():
+    # A corridor (row 1, x 0..14) patrolled by a sight-1 guard between x 4 and 11; the player starts in a side
+    # tile at its east end (14,0), with a safe strip of alcoves below the corridor at (5..8,2), and must reach
+    # (1,1) at the far west end. Walking straight along the row meets the guard head on.
+    tiles = {(x, 1) for x in range(15)} | {(14, 0)} | {(x, 2) for x in range(5, 9)}
+    ends = {"left": (4, 1), "right": (11, 1)}
+    for guard in ((7, 1, "right"), (4, 1, "right"), (10, 1, "left")):
+        game = PatrolGame(tiles, (14, 0), guard, ends)
+        err, out = sneak_with(game, (1, 1))
+        assert err is None and game.pos == (1, 1) and not game.caught, (guard, err, out[-1500:])
+        assert "waiting" in out, out  # it waited for a gap, learning where the guard turns
+        assert bot.TURNS[(6, 2, 7)] == ends, bot.TURNS
+        assert any(pos[1] == 2 for _, pos, _ in game.log), out  # and used the alcoves to let it pass
+        print(f"  guard from {guard}: arrived on frame {game.f}; " + out.strip().splitlines()[-1])
+    assert "safe tile" in out, out  # here the plan ran straight along the row: an alcove was chosen as a waypoint
+    # Predictions held: at every frame the guard's sight never covered the player (checked by the game itself),
+    # and the player reached the far end. A plain walk along the row is caught: the scenario is a real test.
+    naive = PatrolGame(tiles, (14, 0), (7, 1, "right"), ends)
+    for key in ["DOWN"] + ["LEFT"] * 13:
+        bot.stride(naive, [key], naive.facing)
+        if naive.caught:
+            break
+    assert naive.caught, naive.pos
+    # Caught anyway (a watcher the RAM doesn't show as one): sneak stops and says so, pressing nothing more.
+    game = PatrolGame(tiles, (14, 0), (7, 1, "right"), ends)
+    game.shown = 0
+    err, out = sneak_with(game, (1, 1), max_wait=400)
+    assert game.caught and err and "caught" in err and "Gotcha!" in err, (err, out[-800:])
 
 
 @case(emu=False)
