@@ -237,6 +237,9 @@ def t_advance_dialog(a):
             if b is not None or mode != "battle":
                 break
             text = ((get_state(p).get("battle") or {}).get("text") or "").strip()
+            if text.startswith("What will"):  # "What will Ion do?": your action menu is coming up
+                p.step(20)
+                continue
             if text.endswith("?"):  # a Yes/No question: the agent answers it
                 if not seen or seen[-1] != text:
                     seen.append(text)
