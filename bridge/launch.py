@@ -30,7 +30,9 @@ def launch(state=None):
     if state:
         args += ["-t", os.path.abspath(state)]
     # Through "start" so mGBA has no parent: stopping a runner's process tree mustn't take the emulator with it.
-    subprocess.Popen(["cmd", "/c", "start", "", *args, os.path.join(RUN, "Unbound.gba")])
+    # One core at below-normal priority: unthrottled (sync off) it took ~4 of 8 cores; pinned it uses ~11% and
+    # still runs ~8x, and the harness counts frames, not seconds.
+    subprocess.Popen(["cmd", "/c", "start", "", "/belownormal", "/affinity", "1", *args, os.path.join(RUN, "Unbound.gba")])
     for _ in range(30):
         time.sleep(1)
         if serving():
