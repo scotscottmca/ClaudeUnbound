@@ -216,6 +216,11 @@ def go(p, target, reroute=True):
             # map, but not actually in the town"). Learn the edge and don't count it as arriving.
             room = reachable(W.read_world(p))
             if room < POCKET:
+                # Confirm after settling: a crossing into a cutscene once measured a false pocket on Route 1
+                # (530 tiles reachable a moment later), which would have closed the route for good.
+                p.step(30)
+                room = reachable(W.read_world(p)) if raw(p)["mode"] == "overworld" else POCKET
+            if room < POCKET:
                 (g, n), (ex, ey), _ = crossed
                 _note_dead_edge(f"{g},{n},{ex},{ey}")
                 msg = (f"that edge from {W.map_name(p, g, n)} ({ex}, {ey}) leads into a dead-end pocket of "
