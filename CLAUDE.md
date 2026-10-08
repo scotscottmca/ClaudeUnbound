@@ -21,6 +21,12 @@ No build, test suite or linter. Python scripts in `bridge/` are run directly, fr
 
 ROMs, saves and savestates are gitignored and never committed. `rom/` holds the patched ROM; `run/` is the agent's own copy (`Unbound.gba`, `baseline.ss1` fresh-start state, `Unbound.sav`) so it never touches a hand-played save; `saves/` holds autosave backups.
 
+## Testing
+
+Fixes are verified in live play: a fix ships via hot reload and is confirmed on the next real occurrence (a battle-helper change on the next battle), never by restarting the live mGBA or reloading a savestate mid-playthrough. **Only one mGBA may ever run: the live one on port 8888.**
+
+`python tests/regress.py [FILTER]` is an optional safety net, worth running after touching shared helpers or before a fresh run. By default it runs only the offline checks (no emulator, under a second): moves' self-check, harness notes, `press_buttons`, the runner's goal text and bootstrap filtering, and the planner's ledge/gap/stair rules. `--emulator` adds the fixture cases (naming, throw_ball, switch_to, use_item, battle advance_dialog, Grim Woods planner, bridge busy handling) on its own mGBA (port 8890, fixtures from `UNBOUND_FIXTURES`, default `D:\ClaudeUnboundRuns\fixtures`); it refuses to start while any mGBA is running.
+
 ## Architecture
 
 Layered per `docs/research.md`: thin, verified state layer + deterministic tools, with the model supplying policy. Phases 0–1 (ground truth, bridge) are what exists; the MCP tool surface and agent loop (Phase 2) are not built yet.
