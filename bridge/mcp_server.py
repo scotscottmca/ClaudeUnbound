@@ -26,7 +26,7 @@ import naming
 import wiki
 import world as W
 from probe import Probe
-from state import G_MAIN, get_state, press, raw
+from state import BATTLE_MONS, G_MAIN, get_state, press, raw
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 RUN = os.path.normpath(os.path.join(HERE, "..", "run"))
@@ -79,6 +79,16 @@ def summary(s):
             "party": [f"{m['name']} {m['hp']}" for m in s["party"]]}
 
 
+def own_battler_fainted():
+    """One of your battlers (0, or 2 in a double) is a Pokemon at 0 HP: gBattleMons species +0, HP +0x28."""
+    for b in (0, 2):
+        species, = struct.unpack("<H", p.range(BATTLE_MONS + b * 0x58, 2))
+        hp, = struct.unpack("<H", p.range(BATTLE_MONS + b * 0x58 + 0x28, 2))
+        if species and not hp:
+            return True
+    return False
+
+
 def notes(s):
     """Harness messages appended to every action's result."""
     global last_fingerprint, unchanged, watchdog_fired, battle_seen
@@ -128,7 +138,9 @@ def notes(s):
         last_prompt = text
     else:
         last_prompt = None
-    if raw(p)["cb2"] == hex(battle.CB2_BATTLE_PARTY) and s["mode"] != "battle":
+    # The battle party screen also opens for an item (a Potion) or a voluntary switch; it's forced only when one
+    # of your battlers (0, or 2 in a double) has fainted.
+    if raw(p)["cb2"] == hex(battle.CB2_BATTLE_PARTY) and s["mode"] != "battle" and own_battler_fainted():
         alive = [m["name"] for m in s["party"] if not m["hp"].startswith("0/")]
         out.append(f"FORCED SWITCH: the game is waiting for a replacement and B can't cancel it. Call "
                    f"switch_to with one of {alive} (not one already in battle).")
