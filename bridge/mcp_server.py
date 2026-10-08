@@ -20,6 +20,7 @@ import traceback
 
 import bot
 import battle
+import items
 import milestones
 import moves
 import naming
@@ -410,6 +411,13 @@ def t_throw_ball(a):
         return {"result": str(e)}
 
 
+def t_use_item(a):
+    try:
+        return {"result": items.use_item(p, a.get("item", ""), a.get("pokemon") or a.get("name", ""))}
+    except SystemExit as e:
+        return {"result": str(e)}
+
+
 def t_run_away(a):
     if len(a.get("reason", "").strip()) < 10:
         return {"result": "NOT RUN: wild Pokemon are battled and caught. Run only if you may lose the fight: "
@@ -503,6 +511,10 @@ TOOLS = {
     "throw_ball": (t_throw_ball, "In a wild battle: throw a ball by name (e.g. 'Poké Ball') from the bag and "
                    "follow it to 'caught' (stops at the nickname question) or 'broke free' (your next turn).",
                    S({"ball": {"type": "string"}}, ["ball"]), True),
+    "use_item": (t_use_item, "Use a healing item (Potion, Revive, Antidote, Full Restore...) from the bag on a "
+                 "party member by name, in the overworld or at your battle menu (uses up your turn). Reports HP "
+                 "before and after; refuses if the item would do nothing.",
+                 S({"item": {"type": "string"}, "pokemon": {"type": "string"}}, ["item", "pokemon"]), True),
     "type_name": (t_type_name, "On a naming screen (nickname, rival): clear the box, type the name (letters "
                   "and spaces) and confirm. Answer the 'Is this name OK?' question that follows yourself.",
                   S({"name": {"type": "string"}}, ["name"]), True),
