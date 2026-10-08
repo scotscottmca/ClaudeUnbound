@@ -191,7 +191,7 @@ def main():
             time.sleep(wait)
             continue
         first = bool(res.get("rotated"))  # a rotated chunk continues as a fresh session
-        if entry["milestone"].get("badges", 0) >= a.goal_badges or "GOAL REACHED" in text:
+        if entry["milestone"].get("badges", 0) >= a.goal_badges:  # badges only: "so no GOAL REACHED" once ended a run at 0 badges
             print("goal reached:", entry["milestone"])
             return
         if spent > a.budget_usd:
