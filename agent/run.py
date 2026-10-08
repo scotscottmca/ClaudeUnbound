@@ -73,8 +73,8 @@ def setup(ws, fresh, bootstrap, goal_badges):
         saves = sorted(glob.glob(os.path.join(ws, "autosaves", "*.ss1")), key=os.path.getmtime)
         launch.launch(saves[-1] if saves else None)
         print("relaunched mGBA from", saves[-1] if saves else "the in-game save")
-    # Rolling savestate every 5 minutes of game time (bridge-side, runs between chunks too). Unthrottled, the
-    # emulator does ~14x, so 240 kept (~10 MB) is about an hour of real time to roll back through.
+    # Rolling savestate every 18000 frames (bridge-side, runs between chunks too): at the 2x cap that's every
+    # 2.5 minutes, so 240 kept (~10 MB) is ~10 hours to roll back through.
     os.makedirs(os.path.join(ws, "autosaves"), exist_ok=True)
     Probe().autosave(os.path.join(ws, "autosaves"), 18000, 240)
 
