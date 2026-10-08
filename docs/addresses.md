@@ -48,10 +48,24 @@ Pockets are arrays of u16 item ID + u16 count, no XOR, in EWRAM:
 | bag state (`gBagMenuState`-like) | 0x0203ACFC | verified | +0 callback 0x08030AED, +4 location 5 (battle) |
 | open pocket | 0x0203AD02 | verified | u16: 2 Poké Balls, LEFT → 1 (Key Items screen), LEFT → 0; RIGHT stops at 2, LEFT at 0 (only 3 pockets in battle). Reopens on the last pocket used |
 | cursor row per pocket | 0x0203AD04 + 2 × pocket | verified | Key Items: DOWN DOWN read 0 → 2 at 0x0203AD06; Poké Balls: DOWN 0 → 1 (Cancel) at 0x0203AD08 |
-| list scroll per pocket | 0x0203AD0A + 2 × pocket? | pending | 0 with short lists; not read by `throw_ball`, which instead checks the selected name |
+| list scroll per pocket | 0x0203AD0A + 2 × pocket | verified (pocket 0, field bag) | see the start menu / field bag table below; `use_item` reads it, `throw_ball` doesn't (it checks the selected name) |
 | "<item> is\nselected." | `gStringVar4` | verified | printed when A on a ball opens Use / Cancel (cursor starts on Use) |
 
 - After the throw: "Claude used\nPoké Ball!", then "Gotcha!\nZubat was caught!" (waits for A), exp and level-up messages (the level-up stat box waits for A with no printer active), "…'s data was\nadded to the Pokédex." and its Pokédex page (also A with no printer), then "Give a nickname to the\ncaptured Zubat?" (Yes/No, printer inactive). Yes → naming callback2 0x0809FB71. The party count only rises after the nickname step.
+
+### Start menu, field bag and items (use_item, #101)
+
+| Name | Address | Status | Evidence |
+|---|---|---|---|
+| start-menu cursor | 0x020370F4 | verified | u8 icon index; RAM diff RIGHT RIGHT LEFT read 0 → 1 → 2 → 1, matching the label (Pokédex, Pokémon List, Cube V3). Vanilla `sStartMenuCursorPos`'s address |
+| start-menu task | `gTasks` 0x03005090 (16 × 0x28: func +0, isActive +4), func 0x0806F1F1 | verified | active in the fixture with the menu open and after START, gone after B both times; not present while an NPC dialog runs. callback2 stays `CB2_Overworld` and `sLockFieldControls` is 1 with the menu open, so this task is the only way to tell the start menu from a script |
+| field bag | callback2 0x08107EE1 | verified | the same callback as the battle bag (0x08107F11 while opening); `gBagMenuState` +4 location 0 (field) vs 5 (battle). Same pocket (0x0203AD02) and cursor (0x0203AD04 + 2 × pocket) fields; three pockets here too (Items 0, Key Items 1, Poké Balls 2) |
+| list scroll per pocket | 0x0203AD0A + 2 × pocket | verified (pocket 0) | with 17 items: DOWN from row 2 read cursor 3 scroll 0, then cursor stays 3 while scroll counts 1..12, then cursor 4, 5 (Cancel = cursor + scroll 17), then wraps to 0/0. Selected row = cursor + scroll: cursor 2 + scroll 9 showed Max Potion, item 11. Items stuffed into the pocket with a test-only `write16` in a scratch copy of probe.lua |
+| field party screen | callback2 0x0811EBA1 | verified | the battle party screen's callback (0x0811EBD1 while opening); same `gPartyMenu` cursor (+9) and the same two-column grid (0 1 / 2 3 / 4 5, Cancel 7), shown with six Pokémon in field order |
+
+- Field: START → Cube (icon 2) → A → Items pocket → item → A shows "<item> is\nselected." with Use / Give / Toss / Cancel (cursor on Use) → A → "Use on which Pokémon?" → target → A. The HP bar counts up in `gPlayerParty` HP while it animates, then "<name>'s HP was restored\nby N point(s)." prints in `gStringVar4` (printer state 1 while waiting for A).
+- **Unbound keeps the party screen open after a field item**: A on the message returns to "Use on which Pokémon?" for another use (vanilla returns to the bag). B → bag, B → start menu, B → overworld. Between the bag and the start menu, callback2 is 0x08056809, then `CB2_Overworld` with no start-menu task for ~6 frames before the task restarts.
+- Battle: action menu Cube → the battle bag → Items pocket → item → A (Use / Cancel) → A → the battle party screen ("Use on which Pokémon?", battle order) → target → A → the same message → A: 0x080777E9 while it closes, then `BattleMainCB2` and the turn runs. Worked in a wild and a trainer battle (gBattleTypeFlags 0xC).
 
 ### Battle party screen (switch_to)
 
