@@ -5,13 +5,22 @@
 Every action is logged to run/log.jsonl. Tool results carry the harness's notes to the agent:
 watchdog warnings (no progress), self-learning checks (every LEARN_EVERY actions) and
 escalation hints for the model router (#37).
+
+Hot reload: before each tool call, serve() re-imports every bridge module (this file included) if any
+bridge/*.py changed, so fixes land without restarting the agent's session. The runtime state (counters,
+watchdog, verification gate) is persisted to server_state.json next to the log after every call and
+restored on import. A module that fails to import leaves the previous code running and says so.
 """
 import base64
 import collections
 import contextlib
+import difflib
+import glob
+import importlib
 import io
 import json
 import os
+import shutil
 import struct
 import sys
 import tempfile
@@ -70,9 +79,53 @@ last_fingerprint, unchanged, watchdog_fired = None, 0, 0
 battle_seen = False
 
 
-def fingerprint(s):
-    return (s["map"]["group"], s["map"]["num"], tuple(s["pos"]), s["mode"], s.get("dialog"),
-            json.dumps(s.get("battle", {}).get("battlers")), (s.get("battle") or {}).get("text"))
+def fingerprint(s):  # a string, so it compares equal after a save/restore
+    return json.dumps([s["map"]["group"], s["map"]["num"], s["pos"], s["mode"], s.get("dialog"),
+                       s.get("battle", {}).get("battlers"), (s.get("battle") or {}).get("text")])
+
+
+# Runtime state that must survive a hot reload (and a server restart): saved after every call.
+STATE_FILE = os.path.join(os.path.dirname(LOG), "server_state.json")
+PERSIST = ("steps", "verify_due", "last_verified", "last_prompt", "last_fingerprint", "unchanged",
+           "watchdog_fired", "battle_seen")
+
+
+def persist():
+    d = {k: globals()[k] for k in PERSIST}
+    d["arrivals"] = list(arrivals)
+    with open(STATE_FILE + ".tmp", "w", encoding="utf-8") as f:
+        json.dump(d, f, ensure_ascii=False)
+    os.replace(STATE_FILE + ".tmp", STATE_FILE)
+
+
+def restore():
+    if os.path.exists(STATE_FILE):
+        d = json.load(open(STATE_FILE, encoding="utf-8"))
+        globals().update({k: d[k] for k in PERSIST if k in d})
+        arrivals.extend((g, n, tuple(xy)) for g, n, xy in d.get("arrivals", []))
+
+
+REPO_INSTRUCTIONS = os.path.join(HERE, "..", "agent", "CLAUDE.md")
+
+
+def sync_instructions():
+    """agent/CLAUDE.md changed in the repo: copy it into the workspace (where the runner put the agent's
+    CLAUDE.md) and tell the agent which sections changed. Returns harness notes."""
+    ws_copy = os.path.join(os.path.dirname(LOG), "CLAUDE.md")
+    if not os.path.exists(ws_copy):  # not a runner workspace
+        return []
+    old = open(ws_copy, encoding="utf-8").read().splitlines()
+    new = open(REPO_INSTRUCTIONS, encoding="utf-8").read().splitlines()
+    if old == new:
+        return []
+    heads = []
+    for tag, _i1, _i2, j1, _j2 in difflib.SequenceMatcher(None, old, new).get_opcodes():
+        if tag != "equal":
+            h = next((l.lstrip("# ") for l in reversed(new[:j1 + 1]) if l.startswith("#")), "top")
+            if h not in heads:
+                heads.append(h)
+    shutil.copy(REPO_INSTRUCTIONS, ws_copy)
+    return [f"INSTRUCTIONS UPDATED: re-read CLAUDE.md (changed: {', '.join(heads)})"]
 
 
 def summary(s):
@@ -579,7 +632,7 @@ def handle(msg):
     method, mid = msg.get("method"), msg.get("id")
     if method == "initialize":
         result = {"protocolVersion": msg["params"].get("protocolVersion", "2025-06-18"),
-                  "capabilities": {"tools": {}}, "serverInfo": {"name": "unbound", "version": "1"}}
+                  "capabilities": {"tools": {"listChanged": True}}, "serverInfo": {"name": "unbound", "version": "1"}}
     elif method == "tools/list":
         result = {"tools": [{"name": n, "description": d, "inputSchema": sch} for n, (_, d, sch, _) in TOOLS.items()]}
     elif method == "tools/call":
@@ -589,6 +642,10 @@ def handle(msg):
             log({"step": steps, "tool": msg["params"]["name"], "error": repr(e)})
             result = {"content": [{"type": "text", "text": f"error: {e!r}\n{traceback.format_exc()[-800:]}"}],
                       "isError": True}
+        try:
+            persist()
+        except OSError as e:
+            log({"step": steps, "error": f"persist: {e!r}"})
     elif method == "ping":
         result = {}
     elif mid is None:
@@ -598,16 +655,66 @@ def handle(msg):
     return {"jsonrpc": "2.0", "id": mid, "result": result}
 
 
-def main():
-    global p
-    p = Probe()
+restore()
+
+
+def bridge_modules():
+    """Loaded modules that live in bridge/ (the running __main__ copy excluded: it only holds the loop)."""
+    return {n: m for n, m in sys.modules.items() if n != "__main__" and getattr(m, "__file__", None)
+            and os.path.dirname(os.path.abspath(m.__file__)) == HERE}
+
+
+def reload_bridge(mod, changed):
+    """Re-import every bridge module from scratch (so `from state import ...` bindings refresh too).
+    Returns (the module to serve with, harness note). On any import error the old modules stay."""
+    names = ", ".join("bridge/" + os.path.basename(f) for f in changed)
+    old = bridge_modules()
+    for n in old:
+        del sys.modules[n]
+    try:
+        new = importlib.import_module("mcp_server")
+    except BaseException as e:  # SyntaxError, a NameError at import, even SystemExit: keep serving
+        for n in bridge_modules():
+            del sys.modules[n]
+        sys.modules.update(old)
+        return mod, f"HARNESS UPDATE FAILED: {names}: {type(e).__name__}: {e}. Still running the previous code."
+    new.p = mod.p  # keep the emulator connection
+    return new, f"HARNESS UPDATED: {names} reloaded"
+
+
+def serve():
+    """The stdio loop: the one part that never reloads (it holds the pipes). Everything else is looked up
+    on the newest mcp_server module, re-imported whenever a bridge/*.py file changes."""
+    import mcp_server as mod  # this file as a module, apart from __main__, so it can be replaced
+    mod.p = Probe()
+    mtimes = {f: os.path.getmtime(f) for f in glob.glob(os.path.join(HERE, "*.py"))}
     for line in sys.stdin:
-        if line.strip():
-            reply = handle(json.loads(line))
-            if reply is not None:
-                sys.stdout.write(json.dumps(reply) + "\n")
-                sys.stdout.flush()
+        if not line.strip():
+            continue
+        msg = json.loads(line)
+        notes = []
+        if msg.get("method") == "tools/call":
+            now = {f: os.path.getmtime(f) for f in glob.glob(os.path.join(HERE, "*.py"))}
+            changed = sorted(f for f in now if mtimes.get(f) != now[f])
+            mtimes = now  # a failed reload is reported once, and retried on the next change
+            if changed:
+                tools = set(mod.TOOLS)
+                mod, note = reload_bridge(mod, changed)
+                notes.append(note)
+                mod.log({"step": mod.steps, "harness_reload": note})
+                if set(mod.TOOLS) != tools:  # Claude Code re-fetches tools/list on this
+                    sys.stdout.write(json.dumps({"jsonrpc": "2.0", "method": "notifications/tools/list_changed"}) + "\n")
+            try:
+                notes += mod.sync_instructions()
+            except Exception as e:
+                notes.append(f"INSTRUCTIONS SYNC FAILED: {e!r}")
+        reply = mod.handle(msg)
+        if reply is not None:
+            if notes:
+                reply.setdefault("result", {}).setdefault("content", []).append({"type": "text", "text": "\n".join(notes)})
+            sys.stdout.write(json.dumps(reply) + "\n")
+        sys.stdout.flush()
 
 
 if __name__ == "__main__":
-    main()
+    serve()
