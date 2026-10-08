@@ -1,18 +1,16 @@
 -- Bridge server for mGBA 0.10+ (Tools > Scripting > File > Load script).
--- Line protocol on 127.0.0.1:8888, one reply line per command:
---   read8|read16|read32 ADDR   -> hex value
---   range ADDR LEN             -> hex bytes
---   step N                     -> "ok" after N frames
---   shot PATH                  -> save a PNG screenshot, "ok"
---   press KEY [FRAMES]         -> hold KEY (A B START SELECT UP DOWN LEFT RIGHT L R) for FRAMES (default 4), release, "ok"
---   save PATH / load PATH      -> savestate to/from file (everything, incl. RTC and save data), "ok"
---   autosave DIR FRAMES [KEEP] -> every FRAMES frames save DIR/auto-N.ss1, cycling N over KEEP files (default 10); FRAMES 0 stops
+-- Line protocol on 127.0.0.1:8888, one reply line per command. This file is the stable core: the socket
+-- server, the pending/busy bookkeeping and autosave. The commands live in probe_cmds.lua (listed there), and
+--   reload                     -> load probe_cmds.lua again, "ok" (on an error the old commands stay: "err ...")
+-- swaps them in without restarting mGBA, even while a frame command is pending (it keeps counting).
 -- Errors reply "err <message>". While one client's step/press is pending, other clients may only read and shoot.
 
 local PORT = 8888
-local pending -- frame-based command waiting to finish: {sock, frames, key}
-local closed = {}
-local autosave -- {dir, every, keep, frames, n}
+local DIR = debug.getinfo(1, "S").source:match("^@(.*[/\\])") or ""
+-- Core state, shared with the handlers and kept across a reload.
+-- S.pending: frame-based command waiting to finish {sock, frames, key}; S.autosave: {dir, every, keep, frames, n}
+local S = { closed = {} }
+local H -- the handlers: {readonly = {cmd = true}, handle = function(S, sock, line, cmd)}
 
 local function send(sock, s)
 	local i = 1
@@ -27,73 +25,51 @@ local function send(sock, s)
 	end
 end
 
-local function reply(sock, s) send(sock, s .. "\n") end
+function S.reply(sock, s) send(sock, s .. "\n") end
 
-local function hex(data)
-	return (data:gsub(".", function(c) return string.format("%02x", c:byte()) end))
+local function load_handlers()
+	local chunk, err = loadfile(DIR .. "probe_cmds.lua")
+	if not chunk then return err end
+	local ok, h = pcall(chunk)
+	if not ok then return h end
+	if type(h) ~= "table" or type(h.handle) ~= "function" then return "probe_cmds.lua must return {readonly, handle}" end
+	H = h
 end
 
 local function handle(sock, line)
-	local cmd, a, b = line:match("^(%S+)%s*(%S*)%s*(%S*)")
-	-- Reads and screenshots don't advance frames, so they're safe beside another client's pending command (#58).
-	local readonly = cmd == "read8" or cmd == "read16" or cmd == "read32" or cmd == "range" or cmd == "shot"
-	if pending and not readonly then return reply(sock, "err busy: another client's command is running") end
-	if cmd == "press" then
-		local key = C.GBA_KEY[a:upper()]
-		if not key then return reply(sock, "err unknown key " .. a) end
-		emu:addKey(key)
-		pending = { sock = sock, frames = tonumber(b) or 4, key = key }
-		return
+	local cmd = line:match("^(%S+)")
+	if cmd == "reload" then -- doesn't advance frames: allowed beside a pending command
+		local err = load_handlers()
+		console:log("probe: reload " .. (err and ("failed: " .. tostring(err)) or "ok"))
+		return S.reply(sock, err and ("err reload: " .. tostring(err):gsub("\n", " ")) or "ok")
 	end
-	a, b = tonumber(a), tonumber(b)
-	if cmd == "read8" and a then reply(sock, string.format("%x", emu:read8(a)))
-	elseif cmd == "read16" and a then reply(sock, string.format("%x", emu:read16(a)))
-	elseif cmd == "read32" and a then reply(sock, string.format("%x", emu:read32(a)))
-	elseif cmd == "range" and a and b then reply(sock, hex(emu:readRange(a, b)))
-	elseif cmd == "shot" then
-		emu:screenshot(line:match("^shot%s+(.+)$"))
-		reply(sock, "ok")
-	elseif cmd == "save" or cmd == "load" then
-		local path = line:match("^%S+%s+(.+)$")
-		if not path then return reply(sock, "err missing path") end
-		local ok
-		if cmd == "save" then ok = emu:saveStateFile(path) else
-			pending = nil
-			emu:setKeys(0)
-			ok = emu:loadStateFile(path)
-		end
-		reply(sock, ok and "ok" or "err " .. cmd .. " failed: " .. path)
-	elseif cmd == "autosave" then
-		local dir, every, keep = line:match("^autosave%s+(.-)%s+(%d+)%s*(%d*)$")
-		every = tonumber(every)
-		if not every then return reply(sock, "err usage: autosave DIR FRAMES [KEEP]") end
-		autosave = every > 0 and { dir = dir, every = every, keep = tonumber(keep) or 10, frames = 0, n = 0 } or nil
-		reply(sock, "ok")
-	elseif cmd == "step" and a then
-		if a <= 0 then return reply(sock, "ok") end
-		pending = { sock = sock, frames = a }
-	else reply(sock, "err bad command: " .. line) end
+	-- Reads and screenshots don't advance frames, so they're safe beside another client's pending command (#58).
+	if S.pending and not H.readonly[cmd] then return S.reply(sock, "err busy: another client's command is running") end
+	local ok, err = pcall(H.handle, S, sock, line, cmd)
+	if not ok then S.reply(sock, "err handler: " .. tostring(err):gsub("\n", " ")) end
 end
 
 callbacks:add("frame", function()
-	if autosave then
-		autosave.frames = autosave.frames + 1
-		if autosave.frames >= autosave.every then
-			autosave.frames = 0
-			local path = string.format("%s/auto-%d.ss1", autosave.dir, autosave.n)
+	local a = S.autosave
+	if a then
+		a.frames = a.frames + 1
+		if a.frames >= a.every then
+			a.frames = 0
+			local path = string.format("%s/auto-%d.ss1", a.dir, a.n)
 			if not emu:saveStateFile(path) then console:error("probe: autosave failed: " .. path) end
-			autosave.n = (autosave.n + 1) % autosave.keep
+			a.n = (a.n + 1) % a.keep
 		end
 	end
-	if not pending then return end
-	pending.frames = pending.frames - 1
-	if pending.frames > 0 then return end
-	local p = pending
-	pending = nil
+	local p = S.pending
+	if not p then return end
+	p.frames = p.frames - 1
+	if p.frames > 0 then return end
+	S.pending = nil
 	if p.key then emu:clearKey(p.key) end
-	reply(p.sock, "ok")
+	S.reply(p.sock, "ok")
 end)
 
+assert(not load_handlers(), "probe: can't load probe_cmds.lua")
 local server = assert(socket.bind("127.0.0.1", PORT))
 assert(server:listen())
 server:add("received", function()
@@ -110,7 +86,7 @@ server:add("received", function()
 					-- mGBA 0.10 doesn't invalidate a closed socket, so GC would close the
 					-- handle again and kill whichever new client Windows reused it for.
 					-- ponytail: leaks one small table per connection; fine for a dev probe.
-					table.insert(closed, sock)
+					table.insert(S.closed, sock)
 				end
 				return
 			end

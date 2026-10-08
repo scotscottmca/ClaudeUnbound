@@ -1,4 +1,4 @@
-"""Start mGBA with the bridge script unless it's already serving.
+"""Start mGBA with the bridge script unless one is already running (then attach; never a second instance).
 
     python launch.py [STATE]    # STATE: savestate to load at start (default: none, resume the in-game save)
 
@@ -15,13 +15,14 @@ RUN = os.path.join(HERE, "..", "run")
 # User: never faster than 2x. mGBA's own limiter (audio sync at a 120 fps target) holds exactly 120 fps at ~2.4% CPU;
 # CPU caps don't set speed (1% of the machine gave 2.6 fps, 3% gave 150-190).
 SPEED = ["-C", "audioSync=1", "-C", "videoSync=0", "-C", "fpsTarget=120"]
+PORT = int(os.environ.get("UNBOUND_PORT", 8888))
 MGBA = os.environ.get("MGBA", r"D:\Tools\mGBA-dev\mGBA-build-2026-10-06-win64-9154-3a5e34be33dc7f8f707e5bc9db69e8a430046f21\mGBA.exe")
 
 
 def running():
     """True once the emulator runs frames: it can listen without running (see launch)."""
     try:
-        with socket.create_connection(("127.0.0.1", 8888), timeout=5) as s:
+        with socket.create_connection(("127.0.0.1", PORT), timeout=5) as s:
             s.sendall(b"step 1\n")
             return s.recv(64).startswith((b"ok", b"err busy"))  # busy: another client is driving it
     except OSError:
@@ -30,15 +31,25 @@ def running():
 
 def serving():
     try:
-        socket.create_connection(("127.0.0.1", 8888), timeout=1).close()
+        socket.create_connection(("127.0.0.1", PORT), timeout=1).close()
         return True
     except OSError:
         return False
 
 
+def mgba_running():
+    out = subprocess.run(["tasklist", "/FI", "IMAGENAME eq mGBA.exe", "/NH"], capture_output=True, text=True).stdout
+    return "mgba.exe" in out.lower()
+
+
 def launch(state=None):
-    if serving() and running():
-        return
+    """Start mGBA only if none is running. A running one is attached to, never restarted: even a paused
+    emulator (which serves but runs no frames) is the live run. Only one mGBA may ever run (user rule)."""
+    if mgba_running():
+        if serving():
+            return
+        sys.exit(f"an mGBA is running but nothing serves 127.0.0.1:{PORT}: refusing to start a second one. "
+                 "Load bridge/probe.lua into it (Tools > Scripting) or close it yourself.")
     args = [MGBA, *SPEED, "--script", os.path.join(HERE, "probe.lua")]
     if state:
         args += ["-t", os.path.abspath(state)]
@@ -54,7 +65,7 @@ def launch(state=None):
         if serving() and running():
             return
         print("mGBA isn't running frames (disconnected remote desktop session?); retrying in 5 minutes", flush=True)
-        subprocess.run(["taskkill", "/IM", "mGBA.exe", "/F"], capture_output=True)
+        subprocess.run(["taskkill", "/IM", "mGBA.exe", "/F"], capture_output=True)  # the one just started: none ran before
         time.sleep(300)
 
 

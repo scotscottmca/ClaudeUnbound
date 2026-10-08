@@ -42,7 +42,7 @@ def goal_text(badges):
     return "the first badge" if badges == 1 else f"{badges} badges"
 
 
-def setup(ws, fresh, bootstrap, goal_badges):
+def setup(ws, fresh, bootstrap, goal_badges, reloaded=False):
     os.makedirs(os.path.join(ws, "memory"), exist_ok=True)
     shutil.copy(os.path.join(REPO, "agent", "CLAUDE.md"), os.path.join(ws, "CLAUDE.md"))
     if bootstrap and fresh:  # on a resume, memory/ is already this run's
@@ -60,16 +60,17 @@ def setup(ws, fresh, bootstrap, goal_badges):
         json.dump({"mcpServers": {"unbound": {"command": sys.executable,
                                               "args": [os.path.join(REPO, "bridge", "mcp_server.py")],
                                               "env": {"UNBOUND_LOG": os.path.join(ws, "log.jsonl")}}}}, f)
-    if fresh:
+    if fresh:  # the only path that stops an emulator, and only on an explicit --fresh
         subprocess.run(["taskkill", "/IM", "mGBA.exe", "/F"], capture_output=True)
         time.sleep(2)
         sav = os.path.join(REPO, "run", "Unbound.sav")
         if os.path.exists(sav):
             os.replace(sav, sav + f".{int(time.time())}.bak")
         launch.launch(os.path.join(REPO, "run", "baseline.ss1"))
-    elif not launch.serving():
+    elif not reloaded and not launch.mgba_running():  # reloaded: the runner re-exec'd itself, attach as is
         # The emulator went down: resume from the newest autosave, not the last in-game save
-        # (losing 40 minutes of play to a closed emulator is how this was learned).
+        # (losing 40 minutes of play to a closed emulator is how this was learned). A running one, even
+        # paused or not serving, is never restarted: launch() attaches or refuses.
         saves = sorted(glob.glob(os.path.join(ws, "autosaves", "*.ss1")), key=os.path.getmtime)
         launch.launch(saves[-1] if saves else None)
         print("relaunched mGBA from", saves[-1] if saves else "the in-game save")
@@ -169,14 +170,25 @@ def main():
     ap.add_argument("--budget-usd", type=float, default=float("inf"), help="pause when API-equivalent cost passes this")
     ap.add_argument("--goal-badges", type=int, default=1)
     ap.add_argument("--max-chunks", type=int, default=1000)
+    ap.add_argument("--reloaded", action="store_true", help=argparse.SUPPRESS)  # set by the self-reload below
     a = ap.parse_args()
     if a.fresh and os.path.exists(os.path.join(a.workspace, "transcripts")):
         sys.exit(f"{a.workspace} already has a run; pick a new --workspace for a fresh run")
-    setup(a.workspace, a.fresh, a.bootstrap_from, a.goal_badges)
+    setup(a.workspace, a.fresh, a.bootstrap_from, a.goal_badges, a.reloaded)
     usage_log = os.path.join(a.workspace, "usage.jsonl")
     spent = sum(json.loads(l).get("cost_usd") or 0 for l in open(usage_log, encoding="utf-8")) if os.path.exists(usage_log) else 0
     first = a.fresh or a.new_session or not os.path.exists(usage_log)
+    me = os.path.abspath(__file__)
+    started = os.path.getmtime(me)
     for n in range(a.max_chunks):
+        if os.path.getmtime(me) != started:
+            # run.py changed: continue under the new code at this chunk boundary (never --fresh, never relaunching
+            # mGBA). A child rather than os.execv: on Windows execv swaps the PID, so whoever watches the runner
+            # would see it exit.
+            print("run.py changed: reloading the runner", flush=True)
+            args = [sys.executable, me, "--workspace", a.workspace, "--budget-usd", str(a.budget_usd),
+                    "--goal-badges", str(a.goal_badges), "--max-chunks", str(a.max_chunks - n), "--reloaded"]
+            sys.exit(subprocess.call(args + (["--new-session"] if first else [])))
         print(f"chunk {n}: {'start' if first else 'continue'} (spent ${spent:.2f} API-equivalent)")
         res, secs = chunk(a.workspace, first, NEXT.format(goal=goal_text(a.goal_badges)),
                           FIRST + (BOOTSTRAP if n == 0 and a.fresh and a.bootstrap_from else ""))

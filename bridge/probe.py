@@ -7,6 +7,7 @@
     python probe.py shot screen.png
     python probe.py save s.ss1 / load s.ss1
     python probe.py autosave backups 18000 [KEEP]          # every 5 min, 0 stops
+    python probe.py reload                                 # pick up probe_cmds.lua edits without restarting mGBA
     python probe.py dump 0x02000000 0x40000 before.bin    # snapshot
     python probe.py diff before.bin after.bin [BASE]      # changed bytes, offline
 """
@@ -15,10 +16,11 @@ import socket
 import sys
 
 CHUNK = 0x1000  # keeps each reply line small
+PORT = int(os.environ.get("UNBOUND_PORT", 8888))  # a test instance runs a probe.lua copy on another port
 
 
 class Probe:
-    def __init__(self, host="127.0.0.1", port=8888):
+    def __init__(self, host="127.0.0.1", port=PORT):
         self.f = socket.create_connection((host, port)).makefile("rw", newline="\n")
 
     def cmd(self, line):
@@ -45,6 +47,7 @@ class Probe:
     def save(self, path): self.cmd(f"save {os.path.abspath(path)}")
     def load(self, path): self.cmd(f"load {os.path.abspath(path)}")
     def autosave(self, dir, frames, keep=10): self.cmd(f"autosave {os.path.abspath(dir)} {frames} {keep}")
+    def reload(self): self.cmd("reload")  # probe.lua: load probe_cmds.lua again, in flight
 
 
 def diff(a, b, base=0):
@@ -67,6 +70,8 @@ def main(argv):
         print(p.range(num(args[0]), num(args[1])).hex(" "))
     elif cmd == "dump":
         open(args[2], "wb").write(p.range(num(args[0]), num(args[1])))
+    elif cmd == "reload":
+        p.reload()
     elif cmd == "step":
         p.step(num(args[0]))
     elif cmd in ("shot", "save", "load"):
