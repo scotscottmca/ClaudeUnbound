@@ -7,41 +7,47 @@
 <script src="https://cdn.jsdelivr.net/npm/vis-network@9.1.9/standalone/umd/vis-network.min.js"></script>
 <style>
 :root {
-  --bg: #0d1117; --panel: #151b23; --line: #262f3b; --text: #d6dde6; --dim: #7d8895; --faint: #4a5562;
+  --bg: #0b0f14; --panel: #12181f; --tile: #19212a; --line: #232c37; --text: #d6dde6; --dim: #7d8895; --faint: #4f5a67;
   --main: #6cb6ff; --sonnet: #c9a0ff; --opus: #ff9e64; --fable: #7ee0b5;
   --read: #39c5cf; --write: #f2cc60; --good: #56d364; --warn: #e3b341; --bad: #f47067;
   --mono: ui-monospace, "Cascadia Mono", Consolas, monospace;
+  --gap: 12px;
 }
 * { box-sizing: border-box; }
 html, body { margin: 0; height: 100%; background: var(--bg); color: var(--text);
-  font: 13px/1.45 system-ui, "Segoe UI", sans-serif; overflow: hidden; }
-header { height: 40px; display: flex; align-items: center; gap: 18px; padding: 0 14px;
-  border-bottom: 1px solid var(--line); white-space: nowrap; }
-header b { font-size: 14px; letter-spacing: .02em; }
+  font: 13.5px/1.5 system-ui, "Segoe UI", sans-serif; overflow: hidden; }
+header { height: 48px; display: flex; align-items: center; gap: 14px; padding: 0 calc(var(--gap) + 4px); white-space: nowrap; }
+header b { font-size: 15px; letter-spacing: .02em; }
 header .k { color: var(--dim); margin-right: 4px; }
 header .grow { flex: 1; }
-.tag { font: 11px var(--mono); padding: 1px 7px; border-radius: 9px; border: 1px solid var(--line); color: var(--dim); }
+.tag { font: 11px var(--mono); padding: 2px 8px; border-radius: 9px; border: 1px solid var(--line); color: var(--dim); }
 .tag.live { color: var(--good); border-color: #2e5f38; }
 select { background: var(--panel); color: var(--text); border: 1px solid var(--line); border-radius: 4px; font: inherit; }
-main { height: calc(100% - 40px); display: grid; grid-template-rows: minmax(0, 1fr) 142px 43%; }
-.row { display: grid; grid-template-columns: minmax(340px, 42%) 1fr; min-height: 0; }
-.row.bottom { grid-template-columns: minmax(0, .85fr) minmax(0, 1.15fr); }
-section { border-right: 1px solid var(--line); border-bottom: 1px solid var(--line); display: flex;
-  flex-direction: column; min-width: 0; min-height: 0; position: relative; }
-h2 { margin: 0; padding: 7px 12px; font-size: 11px; font-weight: 600; text-transform: uppercase;
-  letter-spacing: .08em; color: var(--dim); display: flex; gap: 8px; align-items: center; }
-h2 .note { text-transform: none; letter-spacing: 0; font-weight: 400; color: var(--faint); }
-.scroll { overflow-y: auto; flex: 1; padding: 0 12px 10px; }
-.scroll::-webkit-scrollbar { width: 8px; } .scroll::-webkit-scrollbar-thumb { background: var(--line); border-radius: 4px; }
+
+/* Layout: two columns. Left: the reasoning stream (scrolls) over the router. Right: trainer & party on top,
+   memory map beside the learnings list below. Panels are separated by space, not borders. */
+main { height: calc(100% - 48px); display: grid; grid-template-columns: minmax(340px, 2fr) minmax(0, 3fr);
+  gap: var(--gap); padding: 0 var(--gap) var(--gap); }
+.col { display: flex; flex-direction: column; gap: var(--gap); min-width: 0; min-height: 0; }
+.pair { flex: 1; min-height: 0; display: grid; grid-template-columns: minmax(0, 3fr) minmax(250px, 2fr); gap: var(--gap); }
+section { background: var(--panel); border-radius: 10px; display: flex; flex-direction: column;
+  min-width: 0; min-height: 0; position: relative; }
+#reason { flex: 1; }
+h2 { margin: 0; padding: 11px 16px 8px; font-size: 11px; font-weight: 600; text-transform: uppercase;
+  letter-spacing: .09em; color: var(--dim); display: flex; gap: 10px; align-items: baseline; }
+h2 .note { text-transform: none; letter-spacing: 0; font-weight: 400; color: var(--faint); margin-left: auto; font-size: 11.5px; }
+.scroll { overflow-y: auto; flex: 1; padding: 0 16px 12px; }
+.scroll::-webkit-scrollbar, #learns::-webkit-scrollbar { width: 8px; }
+.scroll::-webkit-scrollbar-thumb, #learns::-webkit-scrollbar-thumb { background: var(--line); border-radius: 4px; }
 
 /* reasoning */
-#feed .txt { margin: 8px 0; white-space: pre-wrap; }
-#feed .tool { font: 12px var(--mono); color: var(--dim); margin: 2px 0; padding-left: 10px; border-left: 2px solid var(--line); }
+#feed .txt { margin: 10px 0; white-space: pre-wrap; }
+#feed .tool { font: 12px/1.45 var(--mono); color: var(--dim); margin: 3px 0; padding-left: 10px; border-left: 2px solid var(--line); }
 #feed .tool .n { color: #a5b4c4; }
 #feed .tool .r { color: var(--good); } #feed .tool .r.err { color: var(--bad); }
-#feed .spawn { font: 12px var(--mono); margin: 4px 0; padding-left: 10px; border-left: 2px solid var(--sonnet); color: var(--sonnet); }
+#feed .spawn { font: 12px var(--mono); margin: 6px 0; padding-left: 10px; border-left: 2px solid var(--sonnet); color: var(--sonnet); }
 .time { color: var(--faint); font: 10px var(--mono); margin-right: 6px; }
-#paused { display: none; color: var(--warn); }
+#paused { display: none; color: var(--warn); text-transform: none; letter-spacing: 0; }
 
 /* activity pill (#132): what the agent is doing between actions */
 .act { font-size: 12.5px; padding: 3px 12px; border-radius: 999px; border: 1px solid var(--line); background: #151c25;
@@ -50,88 +56,84 @@ h2 .note { text-transform: none; letter-spacing: 0; font-weight: 400; color: var
 .act.wait { border-color: var(--warn); color: var(--warn); } .act.play { color: var(--good); border-color: #2c5a3a; }
 .act.think { color: var(--dim); } .act.idle { opacity: .6; }
 
-/* router */
-#rbody { flex: 1; min-height: 0; display: flex; flex-direction: column; }
-#router svg { display: block; width: 100%; flex: 1 1 0; min-height: 150px; }
-#rside { flex: 0 0 auto; max-height: 150px; overflow: hidden; }
-.node rect { fill: #1b232d; stroke: var(--line); stroke-width: 1.5; transition: stroke .2s, fill .2s; }
+/* router: harness checks on the left, the main agent in the middle, its subagents on the right */
+#router svg { display: block; width: 100%; height: auto; max-height: 190px; padding: 0 12px; }
+.node rect { fill: var(--tile); stroke: var(--line); stroke-width: 1.5; transition: stroke .2s, fill .2s; }
 .node text { fill: var(--text); font-size: 14px; font-weight: 600; } .node .sub { fill: var(--dim); font-size: 11px; font-weight: 400; }
 .node.hot rect { fill: #232c39; }
+.glabel { fill: var(--faint); font: 10px var(--mono); letter-spacing: .08em; text-transform: uppercase; }
 .edge { fill: none; stroke: #2a3441; stroke-width: 2; transition: stroke .3s; }
 .edge.active { stroke-dasharray: 5 4; animation: dash 1s linear infinite; }
 @keyframes dash { to { stroke-dashoffset: -18; } }
-/* "now routing" pill: what is being asked, of whom, and the answer when it comes back */
-#now { margin: 0 12px 6px; padding: 7px 12px; border: 1px solid var(--line); border-radius: 999px; background: #151c25;
-  display: flex; align-items: center; gap: 8px; min-height: 34px; font-size: 12.5px; transition: border-color .3s, opacity .4s; }
-#now.idle { opacity: .55; } #now .tg { font: 600 10.5px var(--mono); color: var(--warn); border: 1px solid #5b4a1e; border-radius: 999px; padding: 1px 7px; white-space: nowrap; }
-#now .who { font-weight: 600; white-space: nowrap; } #now .q { color: var(--text); flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-#now .tm { font: 11px var(--mono); color: var(--dim); white-space: nowrap; } #now .a { color: var(--good); }
-#counts { display: flex; gap: 14px; padding: 2px 12px 4px; font: 12px var(--mono); color: var(--dim); flex-wrap: wrap; }
+#counts { display: flex; gap: 6px 16px; padding: 6px 16px 4px; font: 12px var(--mono); color: var(--dim); flex-wrap: wrap; }
 #counts span b { font-weight: 600; }
-#trail { padding: 0 12px 8px; overflow: hidden; display: flex; flex-direction: column; gap: 4px; }
-#trail .card { border-left: 3px solid var(--line); padding: 2px 8px; font-size: 12px; line-height: 1.4; color: var(--dim); }
-#trail .card .h { font: 11px var(--mono); } #trail .trig { color: var(--warn); } #trail .back { color: var(--good); }
-#trail .card .q, #trail .card .a { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-#trail .card .q { color: var(--text); }
+#trail { padding: 0 16px 12px; font: 11.5px/1.6 var(--mono); color: var(--dim); }
+#trail div { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+#trail .trig { color: var(--warn); } #trail .back { color: var(--good); }
 
-/* party */
-#hdr2 { display: flex; gap: 14px; padding: 0 12px 6px; color: var(--dim); font-size: 12px; flex-wrap: wrap; }
-#hdr2 b { color: var(--text); font-weight: 500; }
-#mons { flex: 1 1 0; min-height: 0; display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); grid-template-rows: repeat(3, minmax(0, 1fr));
-  gap: 6px 8px; padding: 0 12px 10px; }
-#foe:empty { display: none; }
-#foe { display: grid; grid-template-columns: auto 1fr 64px; gap: 10px; align-items: center; margin: 0 12px 6px; padding: 4px 10px;
-  border: 1px solid #5a2f2f; border-radius: 6px; background: #1d1517; font-size: 13px; }
-#foe .nm { color: var(--bad); font-weight: 600; } #foe .sp { color: var(--dim); }
-#stats { flex: 1 1 0; min-height: 0; display: grid; grid-template-columns: repeat(4, minmax(0, 1fr));
-  grid-template-rows: repeat(2, minmax(0, 1fr)); gap: 8px; padding: 2px 12px 8px; container-type: size; }
-/* Each stat is a tile filling its cell; text scales with the area (cqh/cqw), so a tall panel has no dead space. */
-#stats > div { display: flex; flex-direction: column; justify-content: center; gap: .35em; min-width: 0; min-height: 0;
-  padding: 0 14px; background: var(--panel); border: 1px solid var(--line); border-radius: 8px; overflow: hidden;
-  font-size: clamp(11px, min(4.2cqh, 1.6cqw), 16px); }
-#stats .k { color: var(--dim); font-size: .8em; text-transform: uppercase; letter-spacing: .07em; }
-#stats b { font-weight: 600; font-size: 1.7em; line-height: 1.3; padding-bottom: .05em; overflow: hidden; overflow-wrap: anywhere;
+/* trainer stats: tiles sized by their content (no stretching, so no dead space) */
+#stats { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 8px; padding: 0 16px 12px; }
+#stats > div { display: flex; flex-direction: column; gap: 2px; min-width: 0; padding: 9px 12px 10px;
+  background: var(--tile); border-radius: 8px; }
+#stats .k { color: var(--dim); font-size: 10.5px; text-transform: uppercase; letter-spacing: .08em; }
+#stats b { font-weight: 600; font-size: 17px; line-height: 1.35; padding-bottom: .1em; overflow: hidden; overflow-wrap: anywhere;
   display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; }  /* wrap long values, e.g. a map name */
-#stats .sm { color: var(--dim); font: .9em var(--mono); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-#stats .badge { width: .62em; height: .62em; margin: 0 .22em .22em 0; border-width: .1em; }  /* 8 pips: wrap in 2 rows if narrow */
+#stats .sm { color: var(--faint); font: 11px/1.4 var(--mono); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+#stats .badge { width: 11px; height: 11px; margin: 0 3px 3px 0; }
 .badge { display: inline-block; width: 11px; height: 11px; border-radius: 50%; border: 1.5px solid var(--faint); margin-right: 3px; vertical-align: -1px; }
 .badge.on { background: var(--write); border-color: var(--write); }
-.mon .l1 { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-width: 0; }
-.mon .it { font-size: 12px; color: var(--dim); }
-.xp { grid-column: 1 / 3; display: grid; grid-template-columns: 24px 1fr auto; gap: 6px; align-items: center; font: 10px var(--mono); color: var(--faint); }
-.xp .bar { height: 4px; } .xp .bar i { background: var(--main); }
-.mon { display: grid; grid-template-columns: 1fr auto; align-content: space-evenly; gap: 2px 10px; padding: 4px 12px; min-height: 0; overflow: hidden; border: 1px solid var(--line);
-  border-radius: 8px; background: var(--panel); align-items: center; }
-.mon .nm { font-weight: 600; font-size: 16px; } .mon .sp { color: var(--dim); font-size: 13px; font-weight: 400; }
-.mon.lead { border-color: #2b4a6b; }
-.mon.is-partner { opacity: .6; border-style: dashed; } .st.partner { color: var(--dim); border-color: var(--line); }
-.bar { height: 9px; background: #222b36; border-radius: 3px; overflow: hidden; }
-.bar i { display: block; height: 100%; transition: width .5s, background .5s; }
-.hp { font: 13px var(--mono); color: var(--dim); text-align: right; }
-.st { font: 10px var(--mono); padding: 0 5px; border-radius: 3px; background: #3a2a1e; color: var(--opus); margin-left: 6px; }
+
+/* party */
+#foe:empty { display: none; }
+#foe { display: grid; grid-template-columns: auto 1fr 70px; gap: 12px; align-items: center; margin: 0 16px 10px; padding: 8px 12px;
+  border-radius: 8px; background: #2a1719; box-shadow: inset 3px 0 var(--bad); font-size: 13.5px; }
+#foe .nm { color: var(--bad); font-weight: 600; } #foe .sp { color: var(--dim); }
+#mons { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px; padding: 0 16px 14px; }
+.mon { display: flex; flex-direction: column; gap: 5px; padding: 9px 12px 10px; border-radius: 8px; background: var(--tile); min-width: 0; }
+.mon .l1 { display: flex; align-items: baseline; gap: 6px; min-width: 0; }
+.mon .l1 .who { flex: 1; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; line-height: 1.4; }
+.mon .nm { font-weight: 600; font-size: 15px; } .mon .sp { color: var(--dim); font-size: 12.5px; }
+.mon.lead { box-shadow: inset 3px 0 var(--main); }
 .mon.lead .nm::before { content: "▸ "; color: var(--main); }
+.mon.is-partner { opacity: .6; outline: 1px dashed var(--line); } .st.partner { color: var(--dim); background: var(--line); }
+.mon .l3 { display: flex; justify-content: space-between; gap: 8px; font: 10.5px var(--mono); color: var(--faint); min-width: 0; }
+.mon .it { display: flex; gap: 6px; align-items: center; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; font-family: system-ui, "Segoe UI", sans-serif; font-size: 11.5px; color: var(--dim); }
+.mon .l3 .xpt { white-space: nowrap; }
+.bar { height: 7px; background: #262f3a; border-radius: 4px; overflow: hidden; }
+.bar i { display: block; height: 100%; transition: width .5s, background .5s; }
+.bar.xp { height: 3px; } .bar.xp i { background: var(--main); }
+.hp { font: 12.5px var(--mono); color: var(--dim); text-align: right; white-space: nowrap; }
+.st { font: 10px var(--mono); padding: 1px 5px; border-radius: 3px; background: #3a2a1e; color: var(--opus); white-space: nowrap; }
 
 /* memory */
 #graph { flex: 1; min-height: 0; }
-#legend { position: absolute; left: 12px; bottom: 8px; font: 10px var(--mono); color: var(--dim); display: flex; gap: 10px; pointer-events: none; }
+#legend { padding: 4px 16px 12px; font: 10px var(--mono); color: var(--dim); display: flex; flex-wrap: wrap; gap: 4px 10px; pointer-events: none; }
 #legend i { display: inline-block; width: 8px; height: 8px; border-radius: 50%; margin-right: 4px; vertical-align: -1px; }
-#toasts { position: absolute; right: 12px; top: 34px; width: 340px; display: flex; flex-direction: column; gap: 8px; pointer-events: none; }
+#toasts { position: absolute; right: 12px; top: 40px; width: min(340px, calc(100% - 24px)); display: flex; flex-direction: column; gap: 8px; pointer-events: none; }
 .toast { background: #1f2a1f; border: 1px solid #2e5f38; border-left: 3px solid var(--good); border-radius: 6px;
   padding: 8px 10px; box-shadow: 0 6px 20px #0008; animation: pop .35s ease-out; transition: opacity .6s, transform .6s; }
 .toast .h { font: 10px var(--mono); color: var(--good); text-transform: uppercase; letter-spacing: .06em; margin-bottom: 2px; }
 .toast.out { opacity: 0; transform: translateX(30px); }
 @keyframes pop { from { opacity: 0; transform: translateY(-10px) scale(.97); } }
 
-/* learnings */
-#learns { display: flex; gap: 10px; overflow-x: auto; overflow-y: hidden; padding: 0 12px 8px; flex: 1; align-items: stretch; }
-#learns::-webkit-scrollbar { height: 8px; } #learns::-webkit-scrollbar-thumb { background: var(--line); border-radius: 4px; }
-#learn .item { flex: 0 0 350px; padding: 6px 10px; border: 1px solid var(--line); border-radius: 6px; background: var(--panel);
-  font-size: 12px; line-height: 1.4; overflow: hidden; cursor: pointer; }
-#learn .item .tx { display: -webkit-box; -webkit-line-clamp: 5; -webkit-box-orient: vertical; overflow: hidden; }
-#learn .item.open { flex-basis: 560px; overflow-y: auto; } #learn .item.open .tx { -webkit-line-clamp: unset; }
-#learn .meta { font: 10px var(--mono); color: var(--faint); }
+/* learnings: newest first, three lines each, click to read the whole entry */
+#learns { flex: 1; min-height: 0; overflow-y: auto; display: flex; flex-direction: column; gap: 8px; padding: 0 16px 14px; }
+#learn .item { flex: 0 0 auto; padding: 8px 11px; border-radius: 8px; background: var(--tile); font-size: 12.5px; line-height: 1.45; cursor: pointer; }
+#learn .item .tx { display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; overflow: hidden; padding-bottom: .1em; }
+#learn .item.open .tx { -webkit-line-clamp: unset; }
+#learn .meta { font: 10px var(--mono); color: var(--faint); margin-bottom: 2px; }
 #learn .item.new { animation: glow 3s ease-out; }
 @keyframes glow { from { background: #1f3322; } }
+
+/* narrower than a side-by-side window: tighter right column, then one scrolling column */
+@media (max-width: 1150px) { .pair { grid-template-columns: minmax(0, 1fr) minmax(220px, 1fr); } }
+@media (max-width: 860px) {
+  html, body { overflow: auto; height: auto; }
+  main { height: auto; grid-template-columns: minmax(0, 1fr); }
+  #reason { height: 60vh; flex: none; } #stats { grid-template-columns: repeat(2, minmax(0, 1fr)); } .pair { grid-template-columns: minmax(0, 1fr); }
+  #memory { height: 55vh; } #learn { max-height: 45vh; }
+  header { flex-wrap: wrap; height: auto; padding: 8px 16px; } .act { max-width: 100%; }
+}
 </style>
 </head>
 <body>
@@ -146,39 +148,40 @@ h2 .note { text-transform: none; letter-spacing: 0; font-weight: 400; color: var
   <span id="src" class="tag">-</span>
 </header>
 <main>
-  <div class="row">
+  <div class="col">
     <section id="reason">
-      <h2>Claude's reasoning <span class="note">main agent</span><span id="paused">paused</span></h2>
+      <h2>Claude's reasoning <span id="paused">paused</span><span class="note">main agent</span></h2>
       <div class="scroll" id="feed"></div>
     </section>
-    <section id="memory">
-      <h2>Memory map <span class="note" id="gstats"></span></h2>
-      <div id="graph"></div>
-      <div id="legend"></div>
-      <div id="toasts"></div>
-    </section>
-  </div>
-  <section id="learn">
-    <h2>Learned something new <span class="note" id="lcount"></span></h2>
-    <div id="learns"></div>
-  </section>
-  <div class="row bottom">
     <section id="router">
       <h2>Model router</h2>
-      <div id="now" class="idle"><span class="q">waiting for the next handoff</span></div>
-      <div id="rbody">
-        <svg viewBox="0 0 420 290" preserveAspectRatio="xMidYMid meet">
-          <g id="edges"></g><g id="nodes"></g><g id="pulses"></g>
-        </svg>
-        <div id="rside"><div id="counts"></div><div id="trail"></div></div>
-      </div>
+      <svg viewBox="0 0 516 168" preserveAspectRatio="xMidYMid meet">
+        <text class="glabel" x="4" y="10">harness</text><text class="glabel" x="512" y="10" text-anchor="end">subagents</text>
+        <g id="edges"></g><g id="nodes"></g><g id="pulses"></g>
+      </svg>
+      <div id="counts"></div>
+      <div id="trail"></div>
     </section>
+  </div>
+  <div class="col">
     <section id="party">
       <h2>Trainer &amp; party <span class="note" id="partyage"></span></h2>
       <div id="stats"></div>
       <div id="foe"></div>
       <div id="mons"></div>
     </section>
+    <div class="pair">
+      <section id="memory">
+        <h2>Memory map <span class="note" id="gstats"></span></h2>
+        <div id="graph"></div>
+        <div id="legend"></div>
+        <div id="toasts"></div>
+      </section>
+      <section id="learn">
+        <h2>Learned something new <span class="note" id="lcount"></span></h2>
+        <div id="learns"></div>
+      </section>
+    </div>
   </div>
 </main>
 <script>
@@ -200,20 +203,21 @@ function div(cls, html) { const d = document.createElement("div"); d.className =
 
 /* ---------- router */
 const AG = {
-  main: {x: 14, y: 124, label: "Haiku 5.5", sub: "main", color: "--main"},
-  watcher: {x: 270, y: 4, label: "Haiku 5.5", sub: "watcher", color: "--main"},
-  verifier: {x: 270, y: 52, label: "Sonnet 5.5", sub: "verifier", color: "--sonnet"},
-  curator: {x: 270, y: 100, label: "Sonnet 5.5", sub: "curator", color: "--sonnet"},
-  strategist: {x: 270, y: 148, label: "Opus 5.5", sub: "strategist", color: "--opus"},
-  refiner: {x: 270, y: 196, label: "Opus 5.5", sub: "refiner", color: "--opus"},
-  expert: {x: 270, y: 244, label: "Fable 5.1", sub: "expert", color: "--fable"},
+  main: {x: 196, y: 71, label: "Haiku 5.5", sub: "main", color: "--main"},
+  watcher: {x: 4, y: 20, label: "Haiku 5.5", sub: "watcher", color: "--main"},
+  verifier: {x: 4, y: 71, label: "Sonnet 5.5", sub: "verifier", color: "--sonnet"},
+  curator: {x: 4, y: 122, label: "Sonnet 5.5", sub: "curator", color: "--sonnet"},
+  strategist: {x: 388, y: 20, label: "Opus 5.5", sub: "strategist", color: "--opus"},
+  refiner: {x: 388, y: 71, label: "Opus 5.5", sub: "refiner", color: "--opus"},
+  expert: {x: 388, y: 122, label: "Fable 5.1", sub: "expert", color: "--fable"},
 };
-const W = 136, H = 42, spawnN = {}, edgeTimers = {};
+const W = 124, H = 42, spawnN = {}, edgeTimers = {};
 const NS = "http://www.w3.org/2000/svg";
 const svgEl = (tag, attrs, parent) => { const e = document.createElementNS(NS, tag); for (const k in attrs) e.setAttribute(k, attrs[k]); parent && parent.appendChild(e); return e; };
 function edgePath(a) {
-  const m = AG.main, s = AG[a], x1 = m.x + W, y1 = m.y + H / 2, x2 = s.x, y2 = s.y + H / 2;
-  return `M${x1},${y1} C${x1 + 60},${y1} ${x2 - 60},${y2} ${x2},${y2}`;
+  const m = AG.main, s = AG[a], d = s.x > m.x ? 1 : -1;  // subagents to the right, harness checks to the left
+  const x1 = m.x + (d > 0 ? W : 0), y1 = m.y + H / 2, x2 = s.x + (d > 0 ? 0 : W), y2 = s.y + H / 2;
+  return `M${x1},${y1} C${x1 + 30 * d},${y1} ${x2 - 30 * d},${y2} ${x2},${y2}`;
 }
 for (const [k, a] of Object.entries(AG)) {
   const g = svgEl("g", {class: "node", id: "n-" + k}, $("nodes"));
@@ -245,43 +249,24 @@ function pulse(agent, back) {
 function settle(agent, after = 0) {
   setTimeout(() => { const e = $("e-" + agent); e.classList.remove("active"); e.style.stroke = ""; }, after);
 }
-const trailRows = {}, inflight = {};
-const ROLE = k => `${AG[k] ? AG[k].label : "?"} ${AG[k] ? AG[k].sub : k}`;
-let nowTimer = null;
-function showNow(ev, answer) {
-  const a = AG[ev.agent] ? ev.agent : "strategist", el = $("now");
-  el.classList.remove("idle"); el.style.borderColor = css(AG[a].color);
-  const secs = inflight[ev.id] ? Math.round((Date.now() / 1000 - inflight[ev.id].t0)) : 0;
-  el.innerHTML = `<span class="tg">${esc(ev.trigger)}</span><span class="who" style="color:${css(AG[a].color)}">→ ${esc(ROLE(a))}</span>` +
-    (answer == null ? `<span class="q" title="${esc(ev.q || ev.desc)}">${esc(ev.q || ev.desc)}</span><span class="tm" id="nowtm">${secs}s</span>`
-                    : `<span class="q a" title="${esc(answer)}">← ${esc(answer)}</span>`);
-  clearInterval(nowTimer);
-  if (answer == null) nowTimer = setInterval(() => { const t = $("nowtm"); if (t && inflight[ev.id]) t.textContent = Math.round(Date.now() / 1000 - inflight[ev.id].t0) + "s"; }, 1000);
-  else setTimeout(() => { if (!Object.keys(inflight).length) $("now").classList.add("idle"); }, 8000);
-}
+const trailRows = {};
 function onSpawn(ev, quiet) {
   const a = AG[ev.agent] ? ev.agent : "strategist";
   spawnN[a] = (spawnN[a] || 0) + 1;
   $("s-" + a).textContent = `${AG[a].sub} · ×${spawnN[a]}`;
-  const card = div("card", `<div class="h"><span class="time">${hhmm(ev.t)}</span> <span class="trig">${esc(ev.trigger)}</span> → ${esc(ROLE(a))}</div>` +
-    `<div class="q" title="${esc(ev.q || ev.desc)}">Q: ${esc(ev.q || ev.desc)}</div>`);
-  card.style.borderLeftColor = css(AG[a].color);
-  trailRows[ev.id] = card; $("trail").prepend(card);
+  const row = div("", `<span class="time">${hhmm(ev.t)}</span><span class="trig">${esc(ev.trigger)}</span> → ${esc(ev.agent)}: ${esc(ev.desc)}`);
+  row.title = row.textContent;
+  trailRows[ev.id] = row; $("trail").prepend(row);
   while ($("trail").childElementCount > 3) $("trail").lastElementChild.remove();
-  add(div("spawn", `<span class="time">${hhmm(ev.t)}</span>⇢ ${esc(ev.agent)} <span style="color:var(--warn)">[${esc(ev.trigger)}]</span> ${esc(ev.q || ev.desc)}`));
-  if (quiet) return;
-  inflight[ev.id] = {t0: Date.now() / 1000};
-  pulse(a, false);
-  showNow(ev);
+  add(div("spawn", `<span class="time">${hhmm(ev.t)}</span>⇢ ${esc(ev.agent)} <span style="color:var(--warn)">[${esc(ev.trigger)}]</span> ${esc(ev.desc)}`));
+  if (!quiet) pulse(a, false);
 }
 function onReturn(ev, quiet) {
-  const card = trailRows[ev.id];
-  if (card) card.insertAdjacentHTML("beforeend", `<div class="a back" title="${esc(ev.text)}">A: ${esc(ev.text)}</div>`);
+  const row = trailRows[ev.id];  // the answer is in the reasoning feed; the router only marks the handoff done
+  if (row) { row.insertAdjacentHTML("afterbegin", `<span class="back">✓ </span>`); row.title += `
+← ${ev.text}`; }
   add(div("spawn", `<span class="time">${hhmm(ev.t)}</span>⇠ ${esc(ev.agent)}: ${esc(ev.text)}`));
-  if (quiet) return;
-  pulse(ev.agent, true);
-  showNow({...ev, trigger: "answer"}, ev.text);
-  delete inflight[ev.id];
+  if (!quiet) pulse(ev.agent, true);
 }
 const MODEL = {haiku: "--main", sonnet: "--sonnet", opus: "--opus", fable: "--fable"};
 function onCounts(c) {
@@ -315,6 +300,7 @@ function drawStats() {
     cell("Run time", r && r.first ? dur(r.last - r.first) : "-", r ? `${r.actions.toLocaleString()} agent actions` : "") +
     cell("Cost", r ? "$" + r.cost.toFixed(2) : "-", r ? `${r.costed}/${r.chunks} chunks reported` : "") +
     cell("Output tokens", r ? Object.values(r.tokens).reduce((a, b) => a + b, 0).toLocaleString() : "-", tok);
+  $("stats").lastElementChild.title = tok;  // the per-model split can be longer than the tile
 }
 function onParty(s) {
   if (!s) return;
@@ -330,11 +316,14 @@ function onParty(s) {
   const lead = (s.party || []).findIndex(p => +String(p.hp).split("/")[0] > 0);
   (s.party || []).forEach((p, i) => {
     const sp = p.species ? `${esc(p.species)}${p.level ? " Lv" + p.level : ""}` : "";
-    const xp = p.exp ? `<div class="xp"><span>EXP</span><div class="bar"><i style="width:${(100 * p.exp[0] / p.exp[1]).toFixed(0)}%"></i></div><span>${p.exp[1] - p.exp[0]} to go</span></div>` : "";
-    const it = p.item ? `<span class="it"> · ${esc(p.item)}</span>` : "";  // on the name line: the 2x3 cards are short
+    const togo = p.exp ? `${p.exp[1] - p.exp[0]} EXP to go` : "";
+    const xp = p.exp ? `<div class="bar xp" title="${togo}"><i style="width:${(100 * p.exp[0] / p.exp[1]).toFixed(0)}%"></i></div>` : "";
+    const it = p.item ? `<span title="held item">${esc(p.item)}</span>` : "";
     const st = p.status ? `<span class="st">${esc(p.status)}</span>` : "";
     const pt = p.partner ? `<span class="st partner">partner</span>` : "";  // an NPC partner's Pokemon, battle only
-    html += `<div class="mon${i === lead ? " lead" : ""}${p.partner ? " is-partner" : ""}"><div class="l1"><span class="nm">${esc(p.name)}</span> <span class="sp">${p.species !== p.name ? sp : (p.level ? "Lv" + p.level : "")}</span>${st}${pt}${it}</div><div class="hp">${esc(p.hp)}</div><div style="grid-column:1/3">${hpbar(p.hp)}</div>${xp}</div>`;
+    html += `<div class="mon${i === lead ? " lead" : ""}${p.partner ? " is-partner" : ""}">` +
+      `<div class="l1"><span class="who" title="${esc(p.name)} ${esc(sp)}"><span class="nm">${esc(p.name)}</span> <span class="sp">${p.species !== p.name ? sp : (p.level ? "Lv" + p.level : "")}</span></span><span class="hp">${esc(p.hp)}</span></div>` +
+      `${hpbar(p.hp)}${xp}<div class="l3"><span class="it">${st}${pt}${it}</span><span class="xpt">${togo}</span></div></div>`;
   });
   $("mons").innerHTML = html || `<div style="color:var(--faint);padding:8px 0">no party data yet</div>`;
 }
@@ -362,7 +351,7 @@ net.on("stabilizationIterationsDone", () => {
   net.fit();
   settled = true;
 });
-addEventListener("resize", () => net.fit());
+new ResizeObserver(() => { net.redraw(); net.fit(); }).observe($("graph"));  // the panel resizes with the window
 function settleNew(fresh) {
   // Place each new node next to a linked node, pin everything else, run a short damped settle, freeze again.
   for (const id of fresh) {
@@ -420,10 +409,10 @@ function onLearn(ev, quiet) {
   const src = ev.who === "refiner" ? "refiner" : ev.who === "file" ? "learnings.md" : ev.who === "main" ? "agent" : ev.who;
   const item = div("item" + (quiet || ev.quiet ? "" : " new"), `<div class="meta">${hhmm(ev.t)} · ${esc(src)} · ${esc(ev.file)}</div><div class="tx">${esc(ev.text)}</div>`);
   item.title = ev.text; item.onclick = () => item.classList.toggle("open");
-  const L = $("learns"), atEnd = L.scrollLeft + L.clientWidth >= L.scrollWidth - 40;
-  L.appendChild(item);
-  while (L.childElementCount > 200) L.firstElementChild.remove();
-  if (atEnd || !quiet) L.scrollLeft = L.scrollWidth;
+  const L = $("learns");
+  L.prepend(item);
+  while (L.childElementCount > 200) L.lastElementChild.remove();
+  if (!quiet) L.scrollTop = 0;
   if (quiet || ev.quiet) return;
   const t = div("toast", `<div class="h">Learned something new · ${esc(src)}</div>${esc(ev.text.length > 220 ? ev.text.slice(0, 219) + "…" : ev.text)}`);
   $("toasts").prepend(t);
