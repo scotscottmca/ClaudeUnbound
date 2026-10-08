@@ -156,8 +156,8 @@ def notes(s):
         watchdog_fired += 1
         unchanged = 0
         out.append(f"WATCHDOG: nothing has changed for {STALL_AFTER} actions. Stop and reflect: take a "
-                   "screenshot, re-read your objectives, try something different, or load_state the last "
-                   "good save." + (" ESCALATE to the expert subagent: the watchdog has fired repeatedly."
+                   "screenshot, re-read your objectives and try something different. Rolling back to a savestate "
+                   "is not allowed: work your way out." + (" ESCALATE to the expert subagent: the watchdog has fired repeatedly."
                                    if watchdog_fired >= 2 else ""))
     lead = next((m for m in s["party"] if not m["hp"].startswith("0/")), None)
     if s["mode"] == "overworld" and lead:
@@ -419,30 +419,6 @@ def t_travel_to(a):
         bot.battle = old
 
 
-def t_save_state(a):
-    os.makedirs(STATES, exist_ok=True)
-    name = a.get("name") or time.strftime("save-%Y%m%d-%H%M%S")  # the default tier forgets the name
-    p.save(os.path.join(STATES, name + ".ss1"))
-    return {"saved": name}
-
-
-def t_load_state(a):
-    """Rolls the game back: irreversible. Named only, and only right after the verifier approved it
-    (an unnamed default once rolled the run back two hours)."""
-    global verify_due
-    names = sorted(f[:-4] for f in os.listdir(STATES) if f.endswith(".ss1")) if os.path.isdir(STATES) else []
-    name = a.get("name")
-    if name not in names:
-        raise ValueError(f"name one of your savestates: {names}")
-    if steps - last_verified > 3:
-        verify_due = verify_due or steps
-        return {"result": "NOT LOADED: loading a savestate throws away everything since it was saved. Ask the "
-                          "verifier subagent to approve this rollback, then call load_state again."}
-    p.load(os.path.join(STATES, name + ".ss1"))
-    p.step(2)
-    return {"loaded": name}
-
-
 def t_fight(a):
     try:
         return {"result": battle.fight(p, a["move"])}
@@ -544,10 +520,6 @@ TOOLS = {
                   "story gate, an object, a one-way ledge) it stops and says where, so you can decide.",
                   S({"map": {"type": "string"},
                      "max_steps": {"type": "integer"}}, ["map"]), True),
-    "save_state": (t_save_state, "Save an emulator savestate under a name (for rollback).",
-                   S({"name": {"type": "string"}}), False),
-    "load_state": (t_load_state, "Roll back to a named savestate. Irreversible: needs the verifier's approval first.",
-                   S({"name": {"type": "string"}}), True),
     "wiki_search": (t_wiki_search, "Search the local unboundwiki copy. It covers only Pokémon (where to find "
                     "them, types, abilities, evolutions, moves), items and locations (towns, routes, their items, "
                     "trainers, wild Pokémon). No walkthrough or missions: work those out yourself.",
