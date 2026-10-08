@@ -217,6 +217,22 @@ def planner_synthetic():
     assert bot.plan(world(gap, (0, 0), 3), {(1, 0)}, set()) is None
 
 
+@case(emu=False)
+def route_rom():
+    W._rom, W._links = W.RomFile(ROM), {}
+    # Route 4's seam with Route 5 is 5 tiles of shore walled off in a lake, and its KBT Expressway warps
+    # (112,7)/(113,7) sit in solid rock: route() must go round, and the first hop must be walkable.
+    assert W._buried(W.rom_world(3, 72), 112, 7)
+    hops = W.route(None, (3, 72), "Route 5")
+    assert hops and hops[0] == (3, 71) and hops[-1] == (3, 73), hops
+    for start in ((53, 34), (114, 25)):
+        w = W.rom_world(3, 72, start)
+        goals, key = bot.exit_to(w, hops[0])
+        assert key == "RIGHT" and bot.plan(w, goals, set()) is not None, (start, key)  # (114,25) is on the edge: []
+    # exit_to keeps to the stretch of edge that borders the target (Route 13 has x >= 32 of that south edge).
+    assert max(x for x, _ in bot.exit_to(W.rom_world(3, 72), (3, 73))[0]) == 31
+
+
 @case(emu=True)
 def bridge_reads_while_step_pending():  # #58
     a = socket.create_connection(("127.0.0.1", PORT))

@@ -55,9 +55,9 @@ def reachable(w):
     return len(seen)
 
 
-def plan(w, goals, blocked, grass_cost=8, visit=None):
+def plan(w, goals, blocked, grass_cost=8, visit=None, limit=None):
     """Cheapest key sequence from the player to any goal tile. State is (x, y, elevation).
-    VISIT, if given, collects every tile the search reached."""
+    VISIT, if given, collects every tile the search reached (stopping once it holds LIMIT)."""
     # NPCs wander: only one next to the player is a wall; the rest just cost extra.
     px, py = w["player"]
     npcs = {(n["x"], n["y"]) for n in w["npcs"]}
@@ -79,6 +79,8 @@ def plan(w, goals, blocked, grass_cost=8, visit=None):
             continue
         if visit is not None:
             visit.add((x, y))
+            if limit and len(visit) >= limit:
+                return None
         here = w["tile"](x, y)[0]
         for key, (dx, dy) in DIRS.items():
             dx, dy = SIDE_STAIRS.get((here, key), (dx, dy))
@@ -148,12 +150,9 @@ def stride(p, path, facing, max_tiles=8):
 def exit_to(w, target):
     """Goal tiles and the final key that leaves the map toward TARGET, a [group, num] map ID."""
     for c in w["connections"]:
-        if c["to_map"] == list(target):
-            key = EDGE[c["direction"]]
-            dx, dy = DIRS[key]
-            edge = [(x, w["height"] - 1 if dy > 0 else 0) for x in range(w["width"])] if dy else \
-                   [(w["width"] - 1 if dx > 0 else 0, y) for y in range(w["height"])]
-            return set(edge), key
+        if c["to_map"] == list(target) and c["direction"] in EDGE:
+            # Only the stretch of edge that borders TARGET: Route 4's south edge is Route 5 for x < 32, Route 13 after.
+            return {here for here, _ in W.seam(w, c)}, EDGE[c["direction"]]
     warps = {(wp["x"], wp["y"]) for wp in w["warps"] if wp["to_map"] == list(target)}
     # A wide exit mat can list a warp event per tile while only one has a warp behavior: Dresco Town
     # (7,4) has events at (7..9,18) but only (8,18) is a south arrow (0x65); the others are plain floor.
