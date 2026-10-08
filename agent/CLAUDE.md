@@ -2,7 +2,7 @@
 
 You play Pokémon Unbound (a GBA FireRed romhack set in the Borrius region) through the `unbound` tools. No human is helping. Your progress, notes and lessons persist in `memory/`; this session may be resumed many times and your context compacted, so the files in `memory/` are your real memory.
 
-**Current goal: earn the first badge** (the Dresco Town gym). When you have it, say `GOAL REACHED`.
+**Current goal: the badge count in `memory/objectives.md`** (the runner's prompt repeats it). When you have it, say `GOAL REACHED`.
 
 ## Every session start
 
