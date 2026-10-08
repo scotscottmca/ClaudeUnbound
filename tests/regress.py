@@ -272,26 +272,39 @@ class PatrolGame:
     """Frame-stepped stand-in for a patrol corridor (modelled on Crater Town gym, measured read-only): one guard
     walking back and forth a tile per 16 frames and turning at its ends in the same step, the player (8 frames a
     tile, 8 more to turn), and the game's sight check on every frame the player isn't mid-step. Reads cost a frame,
-    as over the socket. CAUGHT marks a catch; LOG is (frame, player, guard) per frame."""
+    as over the socket. CAUGHT marks a catch; LOG is (frame, player, guard) per frame.
+    OTHERS adds guards ({"id", "g": (x, y, facing), "ends", "loads": pos -> bool}): one with LOADS is off screen,
+    missing from the object list, until LOADS(player position) first holds, but walks and sees all along."""
     SB1 = 0x0202552C
 
-    def __init__(self, tiles, player, guard, ends, sight=1):
-        self.tiles, self.pos, self.facing, self.g, self.ends, self.sight = tiles, player, "up", guard, ends, sight
+    def __init__(self, tiles, player, guard, ends, sight=1, others=(), size=(16, 4)):
+        self.tiles, self.pos, self.facing, self.sight, self.size = tiles, player, "up", sight, size
+        self.guards = [{"id": 7, "g": guard, "ends": ends}] + [dict(o) for o in others]
         self.f = self.gt = self.hold = self.moving = self.turning = 0
         self.held, self.caught, self.log = None, False, []
+
+    @property
+    def g(self):
+        return self.guards[0]["g"]
+
+    def loaded(self):
+        for o in self.guards:
+            o["shown"] = o.get("shown") or "loads" not in o or o["loads"](self.pos)
+        return [o for o in self.guards if o["shown"]]
 
     def open(self, t):
         return t in self.tiles
 
     def sees(self):
-        x, y, f = self.g
-        dx, dy = bot.DIRS[f.upper()]
-        for i in range(1, self.sight + 1):
-            t = (x + dx * i, y + dy * i)
-            if not self.open(t):
-                return False
-            if t == self.pos:
-                return True
+        for o in self.guards:
+            x, y, f = o["g"]
+            dx, dy = bot.DIRS[f.upper()]
+            for i in range(1, self.sight + 1):
+                t = (x + dx * i, y + dy * i)
+                if not self.open(t):
+                    break
+                if t == self.pos:
+                    return True
         return False
 
     def frame(self):
@@ -299,12 +312,14 @@ class PatrolGame:
         self.gt += 1
         if self.gt == 16:
             self.gt = 0
-            x, y, f = self.g
-            dx, dy = bot.DIRS[f.upper()]
-            if (x, y) == self.ends[f] or not self.open((x + dx, y + dy)) or (x + dx, y + dy) == self.pos:
-                f, dx, dy = bot.OPPOSITE[f], -dx, -dy
-            nxt = (x + dx, y + dy)
-            self.g = (*nxt, f) if self.open(nxt) and nxt != self.pos else (x, y, f)
+            for o in self.guards:
+                x, y, f = o["g"]
+                dx, dy = bot.DIRS[f.upper()]
+                taken = {self.pos} | {q["g"][:2] for q in self.guards if q is not o}
+                if (x, y) == o["ends"][f] or not self.open((x + dx, y + dy)) or (x + dx, y + dy) in taken:
+                    f, dx, dy = bot.OPPOSITE[f], -dx, -dy
+                nxt = (x + dx, y + dy)
+                o["g"] = (*nxt, f) if self.open(nxt) and nxt not in taken else (x, y, f)
         if self.moving:
             self.moving -= 1
         elif self.turning:
@@ -315,7 +330,7 @@ class PatrolGame:
             else:
                 dx, dy = bot.DIRS[self.held]
                 nxt = (self.pos[0] + dx, self.pos[1] + dy)
-                if self.open(nxt) and nxt != self.g[:2]:
+                if self.open(nxt) and nxt not in {o["g"][:2] for o in self.guards}:
                     self.pos, self.moving = nxt, 8
         self.hold = max(self.hold - 1, 0)
         if not self.moving and self.sees():
@@ -325,7 +340,7 @@ class PatrolGame:
     # Probe surface used by bot.sneak / bot.stride
     def read32(self, a):
         self.frame()
-        return self.SB1
+        return self.f if a == bot.CLOCK else self.SB1
 
     def range(self, a, n):
         self.frame()
@@ -346,18 +361,21 @@ class PatrolGame:
         self.step(n)
 
 
-def sneak_with(game, target, **kw):
-    """Run bot.sneak on GAME with the world and mode reads pointed at it. Returns (SystemExit text or None, output)."""
+def sneak_with(game, target, templates=(), **kw):
+    """Run bot.sneak on GAME with the world and mode reads pointed at it, and TEMPLATES as the map's object templates
+    (rom_world npcs). Returns (SystemExit text or None, output)."""
     def world(_p=None):
-        x, y, f = game.g
-        return {"width": 16, "height": 4, "player": list(game.pos), "elevation": 3, "warps": [], "signs": [],
-                "connections": [], "tile": lambda x, y: (0, 0 if game.open((x, y)) else 1, 3),
-                "npcs": [{"id": 7, "x": x, "y": y, "facing": f, "trainer": True, "graphics": 22, "sight": getattr(game, "shown", game.sight),
-                          "movement": 0x1B}]}
-    saved = W.read_world, W.objects, bot.raw, bot.get_state
+        return {"width": game.size[0], "height": game.size[1], "player": list(game.pos), "elevation": 3, "warps": [],
+                "signs": [], "connections": [], "tile": lambda x, y: (0, 0 if game.open((x, y)) else 1, 3),
+                "npcs": [{"id": o["id"], "x": o["g"][0], "y": o["g"][1], "facing": o["g"][2], "trainer": True,
+                          "graphics": 22, "sight": getattr(game, "shown", game.sight), "movement": 0x1B}
+                         for o in game.loaded()]}
+    saved = W.read_world, W.objects, bot.raw, bot.get_state, W.rom_world
     W.read_world = world
-    W.objects = lambda _p: (world()["npcs"], game.pos, 3)
-    bot.raw = lambda _p: {"mode": "other" if game.caught else "overworld"}
+    W.rom_world = lambda g, n: {"npcs": list(templates)}
+    # Reads cost what they do over the socket, a frame each: objects() is one, raw() four.
+    W.objects = lambda _p: game.step(1) or (world()["npcs"], game.pos, 3)
+    bot.raw = lambda _p: game.step(4) or {"mode": "other" if game.caught else "overworld"}
     bot.get_state = lambda _p: {"pos": list(game.pos), "dialog": "Gotcha!" if game.caught else None}
     bot.TURNS.clear()
     buf = io.StringIO()
@@ -368,7 +386,7 @@ def sneak_with(game, target, **kw):
     except SystemExit as e:
         return str(e), buf.getvalue()
     finally:
-        W.read_world, W.objects, bot.raw, bot.get_state = saved
+        W.read_world, W.objects, bot.raw, bot.get_state, W.rom_world = saved
 
 
 @case(emu=False)
@@ -400,6 +418,110 @@ def sneak_to_patrol():
     game.shown = 0
     err, out = sneak_with(game, (1, 1), max_wait=400)
     assert game.caught and err and "caught" in err and "Gotcha!" in err, (err, out[-800:])
+
+
+@case(emu=False)
+def patrol_phase_prediction():
+    # Given its turning points, a few reads across one of its steps pin a walker's phase to the frame: then its
+    # tile and facing are predicted exactly, every frame for two whole cycles, with no further reads.
+    ends = {"left": (4, 1), "right": (11, 1)}
+    game = PatrolGame({(x, 1) for x in range(15)}, (0, 0), (7, 1, "right"), ends)
+    m = bot.Patrol(ends)
+    for _ in range(17):
+        game.step(1)
+        assert m.sync(game.f, *game.g) or m.ref, game.g
+    assert m.ref[1] == m.ref[2], m.ref  # the frame its step began, exactly
+    wrong = 0
+    for _ in range(2 * m.period * bot.WATCHER_FRAMES):
+        game.step(1)
+        wrong += m.states(game.f, game.f) != {game.g}
+    assert wrong == 0, wrong
+    assert not m.sync(game.f, 9, 1, "left") and bot.Patrol(ends).index(12, 1, "right") is None  # contradictions
+
+
+def gym(player, g7, g8=None, loads=lambda pos: pos[0] <= 17 and 18 <= pos[1] <= 34):
+    """PatrolGame on Crater Town gym (6/2) as the ROM lays it out, with guard 7 patrolling row 27 x 9..18 (seen in
+    RAM) and, if G8, guard 8 on x 1..8 (its template (8,27) range 7, turning like guard 7 at start - range .. start;
+    unverified). Guard 8 is off screen until LOADS(player) (vanilla's spawn window for its template). Returns
+    (game, the map's watcher templates)."""
+    W._rom = W.RomFile(ROM)
+    g = W.rom_world(6, 2)
+    tiles = {(x, y) for x in range(g["width"]) for y in range(g["height"]) if not g["tile"](x, y)[1]}
+    others = [{"id": 8, "g": g8, "ends": {"left": (1, 27), "right": (8, 27)}, "loads": loads}] if g8 else []
+    game = PatrolGame(tiles, player, g7, {"left": (9, 27), "right": (18, 27)}, others=others,
+                      size=(g["width"], g["height"]))
+    return game, [n for n in g["npcs"] if n.get("sight") and (g8 or n["id"] != 8)]
+
+
+def stood(game, tiles):
+    """The most consecutive frames the player stood on one of TILES."""
+    best = run = 0
+    for i, (_, pos, _) in enumerate(game.log):
+        run = run + 1 if i and pos == game.log[i - 1][1] else 1
+        if pos in tiles:
+            best = max(best, run)
+    return best
+
+
+ROW27 = {(x, 27) for x in range(8, 20)}  # guard 7's sight over its patrol
+
+
+@case(emu=False)
+def sneak_to_gym_crossing():
+    # #130 (log step 1891): from (20,22) to the alcove (13,28) the only way runs 7 tiles along the watched row 27.
+    # It waits on a safe tile for the exact frame the whole crossing is clear, then crosses without stopping on the
+    # row (the corner at (13,27) costs ~30 frames, inside the predicted window).
+    waits = 0
+    for g7 in ((18, 27, "left"), (12, 27, "right"), (9, 27, "right"), (15, 27, "left")):
+        game, templates = gym((20, 22), g7)
+        err, out = sneak_with(game, (13, 28), templates)
+        assert err is None and game.pos == (13, 28) and not game.caught, (g7, err, out[-1200:])
+        assert stood(game, ROW27) <= bot.CORNER[1], (g7, stood(game, ROW27), out[-1200:])
+        waits += "the crossing is clear in" in out
+    assert waits, "never waited for a window"
+    # Both guards on screen and modelled: from (13,28) across both patrols to the alcove (4,28).
+    game, templates = gym((13, 28), (12, 27, "right"), (5, 27, "left"))
+    err, out = sneak_with(game, (4, 28), templates)
+    assert err is None and game.pos == (4, 28) and not game.caught, (err, out[-1200:])
+
+
+@case(emu=False)
+def sneak_to_gym_unloaded_guard():
+    # #130: guard 8 isn't in RAM until the player is near its start (8,27), so live reads can't see it. Its template
+    # stands in for it: its whole patrol counts as watched, so the tool won't start a crossing into it, and says why.
+    for g7, g8 in (((18, 27, "left"), (8, 27, "left")), ((12, 27, "right"), (5, 27, "left"))):
+        game, templates = gym((20, 22), g7, g8)
+        err, out = sneak_with(game, (13, 28), templates)
+        assert err and "id 8 (off screen" in err and not game.caught, (err, out[-800:])
+        assert not [pos for _, pos, _ in game.log if pos[1] == 27 and pos[0] <= 16], out[-800:]
+
+
+@case(emu=False)
+def sneak_to_gym_start_watched():
+    # #130 (log step 1895): standing on the watched row at (17,27) with the guard coming, the old tool said "every
+    # tile around is about to be watched" and stayed put, and was caught. Now it steps off at once to a safe tile
+    # it can reach in time (either way), and never pauses on the row.
+    for g7 in ((14, 27, "left"), (12, 27, "right"), (9, 27, "left"), (16, 27, "left")):
+        game, templates = gym((17, 27), g7, (3, 27, "right"))
+        err, out = sneak_with(game, (13, 28), templates, max_wait=3000)
+        left = next(f for f, pos, _ in game.log if pos != (17, 27))
+        assert not game.caught and err is None and game.pos == (13, 28), (g7, err, out[-1200:])
+        assert left <= 24 and stood(game, ROW27 - {(17, 27)}) <= bot.CORNER[1], (g7, left, out[-1200:])
+
+
+@case(emu=False)
+def sneak_to_shadowing():
+    # A long corridor (row 1, x 0..24) with one guard patrolling x 2..22; the target alcove (12,2) lies along it.
+    # Sight is 1 tile ahead and the player is twice as fast, so the way is to slip in behind the guard as it walks
+    # away and follow it, leaving the row before it turns: the timed crossing finds that window.
+    tiles = {(x, 1) for x in range(25)} | {(24, 0), (12, 2)}
+    for g in ((22, 1, "left"), (10, 1, "right"), (5, 1, "left")):
+        game = PatrolGame(tiles, (24, 0), g, {"left": (2, 1), "right": (22, 1)}, size=(25, 3))
+        err, out = sneak_with(game, (12, 2))
+        assert err is None and game.pos == (12, 2) and not game.caught, (g, err, out[-1200:])
+        behind = [p[0] - q[0] for _, p, q in game.log if p[1] == 1 and q[2] == "left" and p[0] > q[0]]
+        assert behind and min(behind) <= 2, (g, behind[:20])  # right on its heels
+        assert "LEFTx12" in out, out[-800:]  # in one go
 
 
 @case(emu=False)
