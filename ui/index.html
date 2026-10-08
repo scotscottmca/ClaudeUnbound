@@ -43,6 +43,13 @@ h2 .note { text-transform: none; letter-spacing: 0; font-weight: 400; color: var
 .time { color: var(--faint); font: 10px var(--mono); margin-right: 6px; }
 #paused { display: none; color: var(--warn); }
 
+/* activity pill (#132): what the agent is doing between actions */
+.act { font-size: 12.5px; padding: 3px 12px; border-radius: 999px; border: 1px solid var(--line); background: #151c25;
+  max-width: 46vw; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; transition: border-color .3s, color .3s; }
+.act.read { border-color: var(--read); color: var(--read); } .act.write { border-color: var(--write); color: var(--write); }
+.act.wait { border-color: var(--warn); color: var(--warn); } .act.play { color: var(--good); border-color: #2c5a3a; }
+.act.think { color: var(--dim); } .act.idle { opacity: .6; }
+
 /* router */
 #rbody { flex: 1; min-height: 0; display: flex; flex-direction: column; }
 #router svg { display: block; width: 100%; flex: 1 1 0; min-height: 150px; }
@@ -133,6 +140,7 @@ h2 .note { text-transform: none; letter-spacing: 0; font-weight: 400; color: var
   <span id="mode" class="tag">connecting</span>
   <span id="speedbox" hidden><span class="k">speed</span><select id="speed">
     <option>1</option><option>5</option><option>20</option><option>60</option><option>200</option></select></span>
+  <span id="act" class="act idle" title="what the agent is doing right now">waiting for activity</span>
   <span class="grow"></span>
   <span id="gmode" class="tag">-</span>
   <span id="src" class="tag">-</span>
@@ -423,6 +431,32 @@ function onLearn(ev, quiet) {
   setTimeout(() => t.classList.add("out"), 6000); setTimeout(() => t.remove(), 6700);
 }
 
+/* ---------- activity */
+let act = {t: 0, kind: "idle", what: ""}, reading = new Set();
+const ICON = {read: "📖", write: "✍️", wait: "⇢", play: "🎮", think: "💭", other: "⚙️"};
+function onAct(ev) {
+  if (ev.kind !== "read") releaseReads();
+  act = ev;
+  if (ev.kind === "read" && ev.file) {  // hold the node lit while the agent is reading, not a 1 s flash
+    reading.add("file:" + ev.file); flash("file:" + ev.file, css("--read"), 600000);
+  }
+  drawAct();
+}
+function releaseReads() { reading.forEach(id => flash(id, css("--read"), 400)); reading.clear(); }
+function drawAct() {
+  const el = $("act"), secs = Math.max(0, Math.round(Date.now() / 1000 - act.t));
+  if (!act.t) return;
+  const who = act.who && act.who !== "main" ? `${act.who}: ` : "";
+  let kind = act.kind, what = act.what;
+  if (kind === "think" || kind === "play") {  // between actions: after a few seconds it's thinking
+    if (secs >= 5) { kind = "think"; what = "thinking"; }
+  }
+  el.className = "act " + kind;
+  el.textContent = `${ICON[kind] || ""} ${who}${what}${secs >= 5 ? ` (${secs}s)` : ""}`;
+  el.title = el.textContent;
+}
+setInterval(drawAct, 1000);
+
 /* ---------- events */
 function handle(ev, quiet) {
   switch (ev.k) {
@@ -432,6 +466,7 @@ function handle(ev, quiet) {
     case "spawn": onSpawn(ev, quiet); break;
     case "return": onReturn(ev, quiet); break;
     case "mem": if (!quiet) onMem(ev); break;
+    case "act": if (!quiet) onAct(ev); break;
     case "learn": onLearn(ev, quiet); break;
     case "graph": onGraph(ev.graph); break;
     case "party": onParty(ev.party); break;

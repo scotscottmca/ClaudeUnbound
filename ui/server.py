@@ -246,6 +246,7 @@ class Transcript:
                     continue
                 name = self.tools.get(b.get("tool_use_id"))
                 txt = result_text(b)
+                self.hub.emit({"k": "act", "t": t, "who": "main", "what": "thinking", "kind": "think"}, keep=False)
                 for trig in TRIGGERS:
                     if trig in txt:
                         self.trigger = trig
@@ -266,6 +267,7 @@ class Transcript:
 
     def tool_use(self, b, parent, who, t):
         name, inp = b.get("name", ""), b.get("input", {}) or {}
+        self.activity(name, inp, who, t)
         if not parent:
             self.tools[b["id"]] = name
         if name in ("Agent", "Task") and not parent:
@@ -307,6 +309,22 @@ class Transcript:
         self.hub.emit({"k": "spawn", "t": t, "id": tid, "agent": kind, "trigger": "harness",
                        "desc": f"step {step}{reason} · {d.get('secs', '?')} s{cost}", "q": q})
         self.ret(tid, d.get("note") or (f"failed: {d['error']}" if d.get("error") else "nothing to add"), t)
+
+    def activity(self, name, inp, who, t):
+        """What the agent is doing right now, for the status pill (#132): memory reads/edits, subagents, play."""
+        f = mem_file(inp.get("file_path") or inp.get("path"))
+        n = name.replace("mcp__unbound__", "")
+        if f and n in ("Read", "Grep", "Glob"):
+            what, kind = f"reading memory: {f}", "read"
+        elif f and n in ("Write", "Edit"):
+            what, kind = f"writing memory: {f}", "write"
+        elif n in ("Agent", "Task"):
+            what, kind = f"consulting the {inp.get('subagent_type', 'subagent')}", "wait"
+        elif name.startswith("mcp__unbound__"):
+            what, kind = tool_label(name, inp), "play"
+        else:
+            what, kind = n, "other"
+        self.hub.emit({"k": "act", "t": t, "who": who, "what": what, "kind": kind, "file": f}, keep=False)
 
     def ret(self, tid, summary, t):
         agent = self.spawns.get(tid)
