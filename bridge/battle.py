@@ -7,7 +7,8 @@ press through them.
 """
 import struct
 
-from state import BATTLE_MONS, DISPLAYED_STRING_BATTLE, NAMES, decode, get_state, raw
+from naming import NAMING_CB2
+from state import BATTLE_MONS, DISPLAYED_STRING_BATTLE, NAMES, STRING_VAR4, decode, get_state, raw
 
 CONTROLLERS = 0x03004FE0  # gBattlerControllerFuncs, u32 per battler
 ACTION_MENU, MOVE_MENU = 0x0802E439, 0x0802EA11
@@ -174,3 +175,118 @@ def switch_to(p, name):
     if p.read32(0x030030F4) == CB2_BATTLE_PARTY:
         raise SystemExit(f"still on the party screen: {name} may already be in battle")
     return f"sent in {name}; {_settle(p)}"
+
+
+CB2_BATTLE_BAG = 0x08107EE1  # the bag opened from the battle menu (0x08107F11 for a frame while it opens)
+BAG_POCKET = 0x0203AD02  # u16 open pocket: 0 Items, 1 Key Items, 2 Poke Balls (the last; RIGHT stops there)
+BAG_CURSOR = 0x0203AD04  # u16 cursor row per pocket
+BALL_POCKET, BALL_SLOTS = 0x0203C354, 50  # u16 item, u16 count; the bag lists the non-empty slots in order
+TRAINER = 0x8
+
+
+def _plain(s):
+    return s.replace("é", "e").lower()
+
+
+def throw_ball(p, ball="Poké Ball"):
+    """Wild battle: Bag -> Poke Balls -> BALL -> Use, then follow the throw to its result."""
+    if p.read32(BATTLE_TYPE_FLAGS) & TRAINER and raw(p)["mode"] == "battle":
+        raise SystemExit("this is a trainer battle: you can't catch a trainer's Pokemon")
+    pocket = struct.unpack(f"<{2 * BALL_SLOTS}H", p.range(BALL_POCKET, 4 * BALL_SLOTS))
+    balls = [NAMES["items"][pocket[i]] for i in range(0, len(pocket), 2) if pocket[i] and pocket[i + 1]]
+    row = next((i for i, n in enumerate(balls) if _plain(n) == _plain(ball)), None)
+    if row is None:
+        raise SystemExit(f"no {ball!r} in the bag; balls: {balls or 'none'}")
+    b, menu = wait_for_menu(p)
+    if b is None:
+        raise SystemExit("no battle menu: text or a prompt is waiting, or the battle is over")
+    if menu == MOVE_MENU:
+        p.press("B", 4)
+        p.step(10)
+    if not to_cursor(p, ACTION_CURSOR + b, 1):
+        raise SystemExit("couldn't put the cursor on the bag")
+    p.press("A", 4)
+    for _ in range(30):
+        p.step(6)
+        if p.read32(0x030030F4) == CB2_BATTLE_BAG:
+            break
+    else:
+        raise SystemExit("the bag didn't open")
+    p.step(30)  # the bag ignores input while it slides in
+    for _ in range(3):
+        if p.read16(BAG_POCKET) == 2:
+            break
+        p.press("RIGHT", 4)
+        p.step(30)
+    for _ in range(len(balls) + 2):
+        cur = p.read16(BAG_CURSOR + 4)
+        if cur == row:
+            break
+        p.press("DOWN" if cur < row else "UP", 4)
+        p.step(10)
+    # ponytail: the list's scroll offset isn't read; past a screenful of ball types the check below catches it.
+    p.press("A", 4)  # opens Use / Cancel, cursor on Use
+    p.step(30)
+    if _plain(decode(p.range(STRING_VAR4, 0x40))) != _plain(f"{balls[row]} is\nselected."):
+        raise SystemExit(f"the bag didn't select {balls[row]} (pocket {p.read16(BAG_POCKET)}, "
+                         f"row {p.read16(BAG_CURSOR + 4)}): look at the screen")
+    p.press("A", 4)
+    return f"threw a {balls[row]}; {_after_throw(p)}"
+
+
+def _after_throw(p):
+    """Follow the throw: A through plain text and the post-capture exp/level-up/Pokedex screens; stop at the
+    nickname question, any other question, the next turn, or the end of the battle."""
+    caught, idle = None, 0
+    for _ in range(30):  # the bag closes first (two callbacks, a few frames)
+        p.step(6)
+        if raw(p)["mode"] == "battle":
+            break
+    for _ in range(300):
+        p.step(10)
+        r = raw(p)
+        if p.read32(0x030030F4) == NAMING_CB2:
+            return f"caught {caught}; on the naming screen: use type_name"
+        if r["mode"] != "battle":
+            return (f"caught {caught}; the battle is over" if caught else
+                    f"the battle is over (now {r['mode']}): look at the screen")
+        if acting(p)[0] is not None:
+            return "it broke free; your next turn" if not caught else f"caught {caught}; your next turn?"
+        text = decode(p.range(DISPLAYED_STRING_BATTLE, 0x100)).strip()
+        if "was caught" in text:
+            caught = NAMES["species"][p.read16(BATTLE_MONS + 0x58)]  # the wild foe, battler 1
+        active, state = r["printer"][0x1B], r["printer"][0x1C]
+        if "nickname" in text.lower() and not active:
+            return (f"caught {caught}; the game asks {text!r}: answer Yes (A) and call type_name, "
+                    "or No (DOWN, A)")
+        if text.endswith("?") and (not active or state == 2) and not text.startswith("What will"):  # the menu's own
+            return f"{'caught ' + caught if caught else 'it broke free'}; a question is waiting: {text!r}"
+        if active and state == 2:
+            p.press("A", 4)
+            idle = 0
+            continue
+        idle = 0 if active else idle + 1
+        # After a capture, the level-up stat box and the Pokedex page wait for A with no text printing.
+        if caught and idle >= 6 and ("grew to" in text or "Pokédex" in text):
+            p.press("A", 4)
+            idle = 0
+        elif idle >= 60:
+            raise SystemExit(f"nothing has happened for 10 s after the throw (text {text!r}): look at the screen")
+    raise SystemExit("the throw didn't resolve: look at the screen")
+
+
+if __name__ == "__main__":
+    # Self-check on a wild battle savestate with a Poke Ball: python battle.py STATE [PORT]
+    import sys
+    from probe import Probe
+    p = Probe(port=int(sys.argv[2]) if len(sys.argv) > 2 else 8888)
+    p.load(sys.argv[1])
+    p.step(2)
+    try:
+        throw_ball(p, "Master Ball")
+        raise AssertionError("threw a ball the bag doesn't hold")
+    except SystemExit as e:
+        assert "no 'Master Ball'" in str(e), e
+    out = throw_ball(p, "Poke Ball")
+    print(out)
+    assert out.startswith("threw a Poké Ball; ") and ("caught" in out or "broke free" in out), out
