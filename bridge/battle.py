@@ -141,7 +141,9 @@ def party_cursor_to(p, target):
 def switch_to(p, name):
     """Send NAME in: from the forced "Choose a Pokemon" screen, or from your battle menu (Pokemon)."""
     party = get_state(p)["party"]
-    slot = next((i for i, m in enumerate(party) if m["name"].lower() == name.lower()), None)
+    # Names can repeat (two uncaught-nickname Makuhita): prefer one that can still fight.
+    matches = [i for i, m in enumerate(party) if m["name"].lower() == name.lower()]
+    slot = next((i for i in matches if not party[i]["hp"].startswith("0/")), matches[0] if matches else None)
     if slot is None:
         raise SystemExit(f"no {name!r} in the party: {[m['name'] for m in party]}")
     if party[slot]["hp"].startswith("0/"):
