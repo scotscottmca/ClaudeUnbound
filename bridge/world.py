@@ -97,6 +97,19 @@ def map_links(_p, group, num):
     return _links[(group, num)]
 
 
+def doors(group, num):
+    """[(x, y, (group, num))] for the map's warps, from the ROM header (dynamic warps left out)."""
+    p = rom()
+    events = u32(p, header_of(p, group, num) + 4)
+    n, ptr = p.range(events, 4)[1], u32(p, events + 8)
+    out = []
+    for i in range(n):
+        x, y, _, _, wnum, wgroup = struct.unpack("<hhBBBB", p.range(ptr + 8 * i, 8))
+        if (wgroup, wnum) != (0x7F, 0x7F):
+            out.append((x, y, (wgroup, wnum)))
+    return out
+
+
 def route(p, start, target_name, closed=(), max_maps=400):
     """Shortest list of maps from START (group, num) to any map named TARGET_NAME, or None.
     CLOSED: maps known to be unreachable for now (story gates the ROM can't tell us about)."""

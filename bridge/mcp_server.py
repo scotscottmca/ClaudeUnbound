@@ -76,6 +76,7 @@ def note_talk(s):
         with open(TALKED, "w") as f:
             json.dump(sorted(talked), f)
 last_fingerprint, unchanged, watchdog_fired = None, 0, 0
+last_map = None  # (group, num) after the previous action, for the UNEXPLORED note
 battle_seen = False
 
 
@@ -159,6 +160,20 @@ def notes(s):
                    "screenshot, re-read your objectives and try something different. Rolling back to a savestate "
                    "is not allowed: work your way out." + (" ESCALATE to the expert subagent: the watchdog has fired repeatedly."
                                    if watchdog_fired >= 2 else ""))
+    global last_map
+    here = (s["map"]["group"], s["map"]["num"])
+    if last_map and here != last_map:
+        # Leaving a map with doors never entered: the full run walked past 12 buildings (missions, a trade)
+        # although get_state lists unvisited exits (docs/bootstrap-report.md). Say so once, on the way out.
+        try:
+            skipped = [(x, y) for x, y, dest in W.doors(*last_map) if dest not in tracker.seen_maps and dest != here]
+        except Exception:  # ROM read for a map header: hints only
+            skipped = []
+        if skipped:
+            out.append(f"UNEXPLORED: you left {W.map_name(None, *last_map)} with {len(skipped)} door(s) never entered "
+                       f"at {', '.join(f'({x},{y})' for x, y in skipped[:8])}. Policy: enter every building and talk "
+                       "to everyone once. Go back unless something stops you (a story gate, a locked door).")
+    last_map = here
     lead = next((m for m in s["party"] if not m["hp"].startswith("0/")), None)
     if s["mode"] == "overworld" and lead:
         hp, top = map(int, lead["hp"].split("/"))
