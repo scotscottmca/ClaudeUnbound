@@ -455,7 +455,9 @@ def t_wiki_read(a):
 S = lambda props, req=(): {"type": "object", "properties": props, "required": list(req)}
 TOOLS = {
     "get_state": (t_get_state, "Current game state: mode (overworld/battle/dialog/other), map, position, "
-                  "facing, badges, money, party, battle details, current dialog box, and map_view: the 15x10 "
+                  "facing, badges, money, party (in your team order; only while the in-battle party screen "
+                  "is open, in that screen's order, which puts the Pokemon in battle first), battle "
+                  "details, current dialog box, and map_view: the 15x10 "
                   "viewport grid (@ you, N NPC/object, T trainer, . walkable, # blocked, G tall grass, "
                   "~ water, W waterfall, I ice (slides you), F forced movement, D warp/door, S sign or other "
                   "interactable (doors, locks, objects: read it to find out), : walkable but another "
