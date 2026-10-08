@@ -86,14 +86,16 @@ def plan(w, goals, blocked, grass_cost=8, visit=None):
             if not (0 <= nx < w["width"] and 0 <= ny < w["height"]) or (nx, ny) in occupied:
                 continue
             beh, col, elev = w["tile"](nx, ny)
-            if beh in LEDGE_DIR:
-                if LEDGE_DIR[beh] != key:
+            jump = beh in LEDGE_DIR or (beh == W.HOP and key in ("LEFT", "RIGHT"))
+            if jump:
+                if beh in LEDGE_DIR and LEDGE_DIR[beh] != key:
                     continue
-                nx, ny = nx + dx, ny + dy  # a ledge jump lands two tiles on
+                nx, ny = nx + dx, ny + dy  # a jump lands two tiles on
                 if not (0 <= nx < w["width"] and 0 <= ny < w["height"]) or (nx, ny) in occupied:
                     continue
                 beh, col, elev = w["tile"](nx, ny)
-            if col or beh in AVOID or (e and elev not in (0, 15, e)):
+            # A jump lands on any level and takes the landing tile's (Grim Woods: ledge (16,25) 3 -> 5).
+            if col or beh in AVOID or (not jump and e and elev not in (0, 15, e)):
                 continue
             ne = e if elev == 15 else elev
             # Ice: you keep sliding until the next tile is blocked or you reach ground that isn't ice.
