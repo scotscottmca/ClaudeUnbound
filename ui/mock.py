@@ -88,7 +88,7 @@ class Mock:
     # -- party snapshot, shaped like state.get_state() + the UI's extras
     def snap(self):
         party = [{**p, "hp": f"{p['hp'][0]}/{p['hp'][1]}"} for p in self.party]
-        s = {**self.st, "map": {"name": self.st["map"]}, "party": party, "src": "mock", "t": time.time()}
+        s = {**self.st, "map": {"name": self.st["map"], "kind": "cave"}, "party": party, "src": "mock", "t": time.time()}
         if self.foe:
             s["battle"] = {"battlers": [{"side": "opponent", **self.foe, "hp": f"{self.foe['hp'][0]}/{self.foe['hp'][1]}"}]}
         self.hub.set("party", s)

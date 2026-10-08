@@ -292,7 +292,7 @@ function drawStats() {
   const badges = s.badges != null ? Array.from({length: 8}, (_, i) => `<i class="badge${i < s.badges ? " on" : ""}"></i>`).join("") : "-";
   const tok = r ? Object.entries(r.tokens).map(([m, n]) => `${m.replace(/^claude-|-\d+-\d+$/g, "")} ${(n / 1000).toFixed(0)}k`).join(" · ") : "";
   $("stats").innerHTML =
-    cell("Location", esc(map || "-"), s.pos ? `(${s.pos.join(", ")})` : "") +
+    cell("Location", esc(map || "-"), [s.map?.kind, s.pos ? `(${s.pos.join(", ")})` : ""].filter(Boolean).join(" · ")) +
     cell("Badges", badges, s.badges != null ? `${s.badges} / 8` : "") +
     cell("Money", s.money != null ? "₽" + s.money.toLocaleString() : "-") +
     cell("Pokédex", s.dex_owned != null ? `${s.dex_owned} caught` : "-", r ? `${r.catches.length} caught this run` : "") +
@@ -307,7 +307,11 @@ function onParty(s) {
   partyT = s.src === "bridge" ? 0 : s.t;
   $("partyage").textContent = s.src === "bridge" ? "live, read-only bridge" : s.src === "mock" ? "mock data" : "";
   party = s; drawStats();
-  $("gmode").textContent = s.mode || "-";
+  // where we are (place and kind of map), plus what's happening when it isn't plain walking around
+  const m = s.map && typeof s.map === "object" ? s.map : {name: s.map};
+  const where = [m.name, m.kind].filter(Boolean).join(" · ");
+  $("gmode").textContent = [where, s.mode && s.mode !== "overworld" ? s.mode : ""].filter(Boolean).join(" · ") || s.mode || "-";
+  $("gmode").title = s.mode ? `mode: ${s.mode}` : "";
   $("src").textContent = s.src === "bridge" ? "bridge :live" : s.src === "mock" ? "mock data" : "log.jsonl";
   $("src").className = "tag" + (s.src === "bridge" ? " live" : "");
   let html = "";

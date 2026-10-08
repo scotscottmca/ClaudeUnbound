@@ -67,6 +67,9 @@ TYPES = {0: "Normal", 1: "Fighting", 2: "Flying", 3: "Poison", 4: "Ground", 5: "
          8: "Steel", 9: "???", 10: "Fire", 11: "Water", 12: "Grass", 13: "Electric", 14: "Psychic", 15: "Ice",
          16: "Dragon", 17: "Dark", 23: "Fairy"}
 MAP_HEADER = 0x02036DFC
+# gMapHeader.mapType (+0x17), vanilla numbering. Verified from ROM headers: Dresco/Bellin 1, Routes 4/5 3, Cinder
+# Volcano and KBT Expressway 4, gyms, marts, Centers and houses 8. A gym looks like any other indoor map.
+MAP_KINDS = {1: "town", 2: "city", 3: "route", 4: "cave", 5: "underwater", 6: "sea route", 8: "indoors", 9: "secret base"}
 # Bag pockets: (address, slots) of u16 item ID + u16 count (#17). Main and key sizes match the
 # save layout; the ball pocket's size isn't known yet, 50 is a guess that stops short of other data.
 POCKETS = {"items": (0x0203BB20, 450), "key_items": (0x0203C228, 75), "poke_balls": (0x0203C354, 50)}
@@ -135,8 +138,9 @@ def get_state(p):
     r = raw(p)
     sb1 = p.read32(SB1_PTR)
     x, y, group, num = struct.unpack("<hhbb", p.range(sb1, 6))
-    mapsec = p.read8(MAP_HEADER + 0x14)
-    s = {"mode": r["mode"], "map": {"group": group, "num": num, "name": NAMES["mapsecs"][str(mapsec)]},
+    mapsec, _, _, mtype = p.range(MAP_HEADER + 0x14, 4)
+    s = {"mode": r["mode"], "map": {"group": group, "num": num, "name": NAMES["mapsecs"][str(mapsec)],
+                                    **({"kind": MAP_KINDS[mtype]} if mtype in MAP_KINDS else {})},
          "pos": [x, y]}
     events = p.range(OBJECT_EVENTS, 16 * 0x24)
     for i in range(16):
