@@ -329,7 +329,7 @@ def t_press_buttons(a):
             raise ValueError(f"unknown button {key}; use {KEYS + ['WAIT']}")
         t = press(p, key, a.get("hold_frames", 4), a.get("wait_frames", 16))
         out.append({"key": key, "moved": t["moved"], "changed": t["changed"],
-                    **({"party_cursor": t["after"]["party_cursor"]} if "party_cursor" in t["after"] else {})})
+                    **({"party_cursor": t["after"]["party_cursor"]} if "party_cursor" in t.get("after", {}) else {})})
     return out
 
 
