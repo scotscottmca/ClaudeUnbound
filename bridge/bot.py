@@ -13,6 +13,7 @@ import json
 import os
 import struct
 import sys
+import types
 
 from probe import Probe
 from state import CB2_OVERWORLD, G_MAIN, SB1_PTR, get_state, press, raw
@@ -29,6 +30,10 @@ AVOID = W.WATER | (W.ICE - {SLIDE_ICE}) | W.FORCED | {0x13}
 # Unbound's sideways stairs move you diagonally. Verified in Frozen Heights: RIGHT on 0xB4 (12,22) lands on
 # (13,21), LEFT on 0xB5 (13,21) back on (12,22). Other orientations are unverified.
 SIDE_STAIRS = {(0xB4, "RIGHT"): (1, -1), (0xB5, "LEFT"): (-1, 1)}
+# Moves the game refused although the planner thought them open, per map: {(group, num): {(x, y, key)}}. Learned by
+# walk_to (Crater Town (28,24) LEFT onto 0xB2, likely another sideways-stair variant) and planned around from then
+# on. Kept in sys.modules so a hot reload doesn't forget them.
+NO_MOVE = sys.modules.setdefault("_unbound_no_move", types.SimpleNamespace(maps={})).maps
 MAX_STEPS = 600
 POCKET = 30  # an arrival area this small (tiles reachable) is a dead end, not the place itself
 DEAD_EDGES_FILE = None  # set by the MCP server: map-edge tiles learned to lead into a pocket
@@ -83,6 +88,8 @@ def plan(w, goals, blocked, grass_cost=8, visit=None, limit=None):
                 return None
         here = w["tile"](x, y)[0]
         for key, (dx, dy) in DIRS.items():
+            if (x, y, key) in w.get("no_move", ()):
+                continue
             dx, dy = SIDE_STAIRS.get((here, key), (dx, dy))
             nx, ny = x + dx, y + dy
             if not (0 <= nx < w["width"] and 0 <= ny < w["height"]) or (nx, ny) in occupied:

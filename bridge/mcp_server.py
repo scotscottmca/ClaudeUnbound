@@ -505,11 +505,14 @@ def t_walk_to(a):
         return t, {t}
 
     def walk():
+        refused = 0
         for i in range(a.get("max_steps", 200)):
             s = get_state(p)
             if s["mode"] != "overworld":
                 raise SystemExit(f"stopped: mode is {s['mode']}")
             w = W.read_world(p)
+            here_map = (s["map"]["group"], s["map"]["num"])
+            w["no_move"] = bot.NO_MOVE.get(here_map, set())
             t, goal = goal_for(w)
             if tuple(s["pos"]) in goal:
                 if tuple(s["pos"]) != t:
@@ -534,7 +537,16 @@ def t_walk_to(a):
                 raise SystemExit(f"no path from {w['player']} to {t}" + (" or any tile next to it" if interact or wall else "")
                                  + " (it may be behind a one-way ledge, on another level, or blocked)")
             if bot.stride(p, path, s.get("facing")) == 0 and raw(p)["mode"] == "overworld":
-                raise SystemExit(f"blocked going {path[0]} from {w['player']}")
+                # The game refused a move the planner thought open (an unmodelled tile, an invisible block):
+                # remember it for this map and plan around it, rather than stop and have the same move retried.
+                refused += 1
+                to = bot.landing(w, *w["player"], path[0])
+                if not any(abs(n["x"] - to[0]) + abs(n["y"] - to[1]) <= 1 for n in w["npcs"]):  # an NPC: just in the way
+                    bot.NO_MOVE.setdefault(here_map, set()).add((*w["player"], path[0]))
+                print(f"blocked going {path[0]} from {w['player']} (tile behavior 0x{w['tile'](*w['player'])[0]:X}): "
+                      "remembered, planning around it")
+                if refused >= 3:
+                    raise SystemExit(f"blocked going {path[0]} from {w['player']}, and around it {refused} times")
         raise SystemExit("max_steps reached")
     return run_bot(walk)
 

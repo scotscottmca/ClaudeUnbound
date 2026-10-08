@@ -575,6 +575,15 @@ def watch_area():
 
 
 @case(emu=False)
+def planner_no_move():
+    # A move the game refused (walk_to learns it per map) is planned around, not retried.
+    w = {"width": 3, "height": 2, "player": [0, 0], "elevation": 3, "npcs": [], "tile": lambda x, y: (0, 0, 3)}
+    assert bot.plan(w, {(2, 0)}, set()) == ["RIGHT", "RIGHT"]
+    w["no_move"] = {(0, 0, "RIGHT")}
+    assert bot.plan(w, {(2, 0)}, set()) == ["DOWN", "RIGHT", "RIGHT", "UP"]
+
+
+@case(emu=False)
 def walk_sequence_guard():
     # Crater gym id 11 (0x24, walk sequence right-down-up-left, home (24,6), range x4 y3), as recorded in the
     # user's demo: a 14-step loop. The tiles the user waited on are safe; the one they were caught on isn't.
