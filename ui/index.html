@@ -70,12 +70,17 @@ h2 .note { text-transform: none; letter-spacing: 0; font-weight: 400; color: var
 #foe { display: grid; grid-template-columns: auto 1fr 64px; gap: 10px; align-items: center; margin: 0 12px 6px; padding: 4px 10px;
   border: 1px solid #5a2f2f; border-radius: 6px; background: #1d1517; font-size: 13px; }
 #foe .nm { color: var(--bad); font-weight: 600; } #foe .sp { color: var(--dim); }
-#stats { flex: 1 1 0; min-height: 0; display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); align-content: space-evenly;
-  gap: 6px 16px; padding: 4px 14px 8px; font-size: 13px; }  /* half the section, party grid the other half */
-#stats div { display: flex; flex-direction: column; min-width: 0; }
-#stats .k { color: var(--dim); font-size: 11px; text-transform: uppercase; letter-spacing: .06em; }
-#stats b { font-weight: 600; font-size: 19px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-#stats .sm { color: var(--dim); font: 12px var(--mono); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+#stats { flex: 1 1 0; min-height: 0; display: grid; grid-template-columns: repeat(4, minmax(0, 1fr));
+  grid-template-rows: repeat(2, minmax(0, 1fr)); gap: 8px; padding: 2px 12px 8px; container-type: size; }
+/* Each stat is a tile filling its cell; text scales with the area (cqh/cqw), so a tall panel has no dead space. */
+#stats > div { display: flex; flex-direction: column; justify-content: center; gap: .35em; min-width: 0; min-height: 0;
+  padding: 0 14px; background: var(--panel); border: 1px solid var(--line); border-radius: 8px; overflow: hidden;
+  font-size: clamp(11px, min(4.2cqh, 1.6cqw), 16px); }
+#stats .k { color: var(--dim); font-size: .8em; text-transform: uppercase; letter-spacing: .07em; }
+#stats b { font-weight: 600; font-size: 1.7em; line-height: 1.15; overflow: hidden; overflow-wrap: anywhere;
+  display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; }  /* wrap long values, e.g. a map name */
+#stats .sm { color: var(--dim); font: .9em var(--mono); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+#stats .badge { width: .62em; height: .62em; margin: 0 .22em .22em 0; border-width: .1em; }  /* 8 pips: wrap in 2 rows if narrow */
 .badge { display: inline-block; width: 11px; height: 11px; border-radius: 50%; border: 1.5px solid var(--faint); margin-right: 3px; vertical-align: -1px; }
 .badge.on { background: var(--write); border-color: var(--write); }
 .mon .l1 { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-width: 0; }
