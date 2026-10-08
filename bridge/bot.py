@@ -163,6 +163,10 @@ CORNER = (20, 40)  # a change of direction mid-crossing, turn included: stride s
 MARGIN = 6  # frames of slack each side of a tile's exposure against an exactly modelled watcher
 CLOCK = G_MAIN + 0x24  # gMain.vblankCounter2: the frame count each object read is stamped with
 TURNS = {}  # (group, num, id) -> {facing: farthest tile it reached in that facing before turning}, learned
+SEEDED = set()  # (group, num, id) whose TURNS were seeded from the template (once: a contradicted seed is re-learnt)
+# Vanilla WalkBackAndForth: it sets off this way from its start and turns at the end of its movement range and back
+# at its start, so it patrols start .. start +- range. Verified on guard 7 (0x1B, (18,27), range 9: x 9..18).
+SET_OFF = {0x19: "up", 0x1A: "down", 0x1B: "left", 0x1C: "right"}
 TEMPLATE_FACING = {7: "up", 8: "down", 9: "left", 10: "right"}  # vanilla FACE_* movement types
 
 
@@ -395,6 +399,12 @@ def sneak(p, target, max_steps=80, max_wait=2400):
                 n.update(home=(t["x"], t["y"]), range=t["range"])
         w = dict(w, npcs=npcs, player=list(player), elevation=elev)
         here = tuple(player)
+        for n in npcs:
+            if n.get("home") and n.get("movement") in SET_OFF and (g, num, n["id"]) not in SEEDED:
+                SEEDED.add((g, num, n["id"]))
+                if seed := _seed(w, n):
+                    TURNS[(g, num, n["id"])] = seed
+                    print(f"id {n['id']}: patrol seeded from its template, {seed} (until a read contradicts it)")
         turns_of = watch(npcs, here, now)
         for n in npcs:
             known = TURNS.get((g, num, n["id"]), {})
@@ -462,13 +472,25 @@ def sneak(p, target, max_steps=80, max_wait=2400):
             # on it; else to a nearer safe tile that is closer to the target; else wait here.
             if bad and (here, len(path)) not in ladders:  # only safe tiles nearer the target than this one
                 ladders[here, len(path)] = _ladder(w, here, target, len(path), sweep, static)
-            for z in ladders.get((here, len(path)), []) if bad else []:
-                alt = plan(w, {z}, static)
-                if alt and _leg(w, here, alt, sweep, seen, facing, lines)[1] is None:
-                    print(f"{here}: the way on is watched at {bad}; heading for the safe tile {z} first")
-                    path, (n, bad) = alt, _leg(w, here, alt, sweep, seen, facing, lines)
-                    break
-            if bad:
+            # Every watcher that matters modelled exactly: the first frame each way on (to the target, or to one of
+            # the nearer safe tiles) is clear is known, so take the soonest and wait exactly that long (re-reading
+            # shortly before, to re-sync). Else take one that is clear now, or poll.
+            exact = all(n_["id"] in models or n_.get("movement") in FIXED_FACING for n_ in npcs if n_.get("sight"))
+            cycle = max([m.period * WATCHER_FRAMES for m in models.values()], default=0) + 2 * MARGIN
+            ways = [(path, None)] + [(alt, z) for z in ladders.get((here, len(path)), []) if bad
+                                     if (alt := plan(w, {z}, static))]
+            d, way, z = None, path, None
+            for alt, zz in ways:
+                first = next((dd for dd in range(0, cycle + 2, 2) if dd < (d if d is not None else 1 << 30)
+                              and _leg(w, here, alt, sweep, seen, facing, lines, dd)[1] is None), None) if exact \
+                    else (0 if _leg(w, here, alt, sweep, seen, facing, lines)[1] is None else None)
+                if first is not None and (d is None or first < d):
+                    d, way, z = first, alt, zz
+            if z is not None:
+                print(f"{here}: the way on is watched at {bad}; heading for the safe tile {z} first")
+                path = way
+                n, bad = _leg(w, here, path, sweep, seen, facing, lines)
+            if d is None or d > 16:
                 # Waiting doesn't bring an off-screen watcher on screen (only moving does): give up at once.
                 bad = next((t for t in _tiles(w, here, path)[:n] if t in lines), bad)
                 who = _who(w, bad, ghosts, turns_of)
@@ -478,21 +500,16 @@ def sneak(p, target, max_steps=80, max_wait=2400):
                 if waited >= max_wait:
                     raise SystemExit(f"stopped at {here} (a safe tile) after waiting {waited} frames (~{waited / 60:.0f} s "
                                      f"of game time): the way on stayed watched at {bad} by {who or 'a watcher'}.")
-                # Every watcher that matters modelled exactly: find the first frame the whole crossing is clear and
-                # wait exactly that long (re-reading shortly before, to re-sync). Else poll.
-                exact = all(n_["id"] in models or n_.get("movement") in FIXED_FACING
-                            for n_ in npcs if n_.get("sight"))
-                d = next((d for d in range(2, 640, 2)
-                          if _leg(w, here, path, sweep, seen, facing, lines, d)[1] is None), None) if exact else None
-                if d is None or d > 16:
-                    step = d - 12 if d else 4
-                    if d:
-                        print(f"{here}: the crossing is clear in {d} frames (watched at {bad} now); waiting")
-                    p.step(step)
-                    waited += step
-                    continue
-            else:
-                d = 0
+                if exact and d is None and all(m.ref[2] - m.ref[1] <= 2 for m in models.values()):
+                    raise SystemExit(f"stopped at {here} (a safe tile): no moment in a whole patrol cycle leaves the way "
+                                     f"on unseen (it's watched at {bad} by {who or 'a watcher'}); waiting won't help. "
+                                     "Try another safe tile or another way round.")
+                step = d - 12 if d else 4
+                if d:
+                    print(f"{here}: the crossing is clear in {d} frames (watched at {bad} now); waiting")
+                p.step(step)
+                waited += step
+                continue
             # The emulator runs on while this decides: count the frames that took, and wait only the rest.
             lag = p.read32(CLOCK) - now
             if lag > d and _leg(w, here, path, sweep, seen, facing, lines, lag)[1]:
@@ -514,6 +531,18 @@ def sneak(p, target, max_steps=80, max_wait=2400):
         if not path:
             path = None
     raise SystemExit(f"stopped: max_steps ({max_steps}) reached")
+
+
+def _seed(w, n):
+    """Turning points for back-and-forth walker N from its template (HOME, RANGE, movement type), per SET_OFF; None
+    if the stretch isn't all open (vanilla walks in place against a wall rather than turning)."""
+    off = SET_OFF[n["movement"]]
+    dx, dy = DIRS[off.upper()]
+    r = n["range"] & 0xF if dx else n["range"] >> 4
+    far = (n["home"][0] + dx * r, n["home"][1] + dy * r)
+    if not r or not all(_walkable(w, {}, (n["home"][0] + dx * i, n["home"][1] + dy * i)) for i in range(r + 1)):
+        return None
+    return {off: far, OPPOSITE[off]: n["home"]}
 
 
 def _who(w, tile, ghosts, turns_of):

@@ -316,7 +316,8 @@ class PatrolGame:
                 x, y, f = o["g"]
                 dx, dy = bot.DIRS[f.upper()]
                 taken = {self.pos} | {q["g"][:2] for q in self.guards if q is not o}
-                if (x, y) == o["ends"][f] or not self.open((x + dx, y + dy)) or (x + dx, y + dy) in taken:
+                # Vanilla WalkBackAndForth: turns at its ends; walks in place while something stands in its way.
+                if (x, y) == o["ends"][f] or not self.open((x + dx, y + dy)):
                     f, dx, dy = bot.OPPOSITE[f], -dx, -dy
                 nxt = (x + dx, y + dy)
                 o["g"] = (*nxt, f) if self.open(nxt) and nxt not in taken else (x, y, f)
@@ -378,6 +379,7 @@ def sneak_with(game, target, templates=(), **kw):
     bot.raw = lambda _p: game.step(4) or {"mode": "other" if game.caught else "overworld"}
     bot.get_state = lambda _p: {"pos": list(game.pos), "dialog": "Gotcha!" if game.caught else None}
     bot.TURNS.clear()
+    bot.SEEDED.clear()
     buf = io.StringIO()
     try:
         with contextlib.redirect_stdout(buf):
@@ -439,16 +441,16 @@ def patrol_phase_prediction():
     assert not m.sync(game.f, 9, 1, "left") and bot.Patrol(ends).index(12, 1, "right") is None  # contradictions
 
 
-def gym(player, g7, g8=None, loads=lambda pos: pos[0] <= 17 and 18 <= pos[1] <= 34):
+def gym(player, g7, g8=None, loads=lambda pos: pos[0] <= 17 and 18 <= pos[1] <= 34, ends7=((9, 27), (18, 27))):
     """PatrolGame on Crater Town gym (6/2) as the ROM lays it out, with guard 7 patrolling row 27 x 9..18 (seen in
-    RAM) and, if G8, guard 8 on x 1..8 (its template (8,27) range 7, turning like guard 7 at start - range .. start;
-    unverified). Guard 8 is off screen until LOADS(player) (vanilla's spawn window for its template). Returns
-    (game, the map's watcher templates)."""
+    RAM; ENDS7 to differ from its template) and, if G8, guard 8 on x 1..8 (vanilla WalkBackAndForth from its template
+    (8,27) range 7; unverified). Guard 8 is off screen until LOADS(player) (vanilla's spawn window for its template).
+    Returns (game, the map's watcher templates)."""
     W._rom = W.RomFile(ROM)
     g = W.rom_world(6, 2)
     tiles = {(x, y) for x in range(g["width"]) for y in range(g["height"]) if not g["tile"](x, y)[1]}
     others = [{"id": 8, "g": g8, "ends": {"left": (1, 27), "right": (8, 27)}, "loads": loads}] if g8 else []
-    game = PatrolGame(tiles, player, g7, {"left": (9, 27), "right": (18, 27)}, others=others,
+    game = PatrolGame(tiles, player, g7, {"left": ends7[0], "right": ends7[1]}, others=others,
                       size=(g["width"], g["height"]))
     return game, [n for n in g["npcs"] if n.get("sight") and (g8 or n["id"] != 8)]
 
@@ -478,7 +480,14 @@ def sneak_to_gym_crossing():
         assert err is None and game.pos == (13, 28) and not game.caught, (g7, err, out[-1200:])
         assert stood(game, ROW27) <= bot.CORNER[1], (g7, stood(game, ROW27), out[-1200:])
         waits += "the crossing is clear in" in out
+        assert "id 7: patrol seeded from its template" in out, out[:600]
     assert waits, "never waited for a window"
+    # A guard that doesn't patrol as its template says (x 11..16): the seed is contradicted, it falls back to the
+    # pessimistic model and re-learns the turning points by watching, and still isn't caught.
+    game, templates = gym((20, 22), (14, 27, "left"), ends7=((11, 27), (16, 27)))
+    err, out = sneak_with(game, (13, 28), templates, max_wait=4000)
+    assert not game.caught and "broke its predicted patrol" in out, (err, out[-1500:])
+    assert bot.TURNS[(6, 2, 7)] == {"left": (11, 27), "right": (16, 27)}, bot.TURNS
     # Both guards on screen and modelled: from (13,28) across both patrols to the alcove (4,28).
     game, templates = gym((13, 28), (12, 27, "right"), (5, 27, "left"))
     err, out = sneak_with(game, (4, 28), templates)
