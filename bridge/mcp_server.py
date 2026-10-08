@@ -211,7 +211,10 @@ def t_get_screenshot(_):
 
 def t_press_buttons(a):
     out = []
-    for key in a["buttons"]:
+    buttons = a["buttons"]
+    if isinstance(buttons, str):  # "A" or "UP, A": a bare string used to be split into letters
+        buttons = [b for b in buttons.replace(",", " ").split()]
+    for key in buttons:
         key = key.upper()
         if key == "WAIT":  # the agent asked for this: let a cutscene or animation play out
             p.step(30)
