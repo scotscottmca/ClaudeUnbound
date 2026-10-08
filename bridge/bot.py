@@ -26,6 +26,9 @@ WARP_KEYS = {0x62: ["RIGHT"], 0x63: ["LEFT"], 0x64: ["UP"], 0x65: ["DOWN"], 0x69
 TILE_FRAMES = 8  # Unbound walks a tile in 8 frames when the key is held (measured)
 SLIDE_ICE = 0x23  # slides you; thin (0x26) and cracked (0x27) ice are puzzles, still avoided
 AVOID = W.WATER | (W.ICE - {SLIDE_ICE}) | W.FORCED | {0x13}
+# Unbound's sideways stairs move you diagonally. Verified in Frozen Heights: RIGHT on 0xB4 (12,22) lands on
+# (13,21), LEFT on 0xB5 (13,21) back on (12,22). Other orientations are unverified.
+SIDE_STAIRS = {(0xB4, "RIGHT"): (1, -1), (0xB5, "LEFT"): (-1, 1)}
 MAX_STEPS = 600
 POCKET = 30  # an arrival area this small (tiles reachable) is a dead end, not the place itself
 DEAD_EDGES_FILE = None  # set by the MCP server: map-edge tiles learned to lead into a pocket
@@ -76,7 +79,9 @@ def plan(w, goals, blocked, grass_cost=8, visit=None):
             continue
         if visit is not None:
             visit.add((x, y))
+        here = w["tile"](x, y)[0]
         for key, (dx, dy) in DIRS.items():
+            dx, dy = SIDE_STAIRS.get((here, key), (dx, dy))
             nx, ny = x + dx, y + dy
             if not (0 <= nx < w["width"] and 0 <= ny < w["height"]) or (nx, ny) in occupied:
                 continue

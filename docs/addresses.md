@@ -87,6 +87,7 @@ Pockets are arrays of u16 item ID + u16 count, no XOR, in EWRAM:
 - **Elevation matters.** Walk-tested on Route 1: from elevation 3 the player can't step onto elevation 5 even with collision 0. The rule (vanilla): blocked unless the player's elevation is 0, or the tile's is 0, 15 or equal. Elevation-0 tiles (stairs, ramps) reset the player's elevation; 15 (bridges) keeps it. The grid shows other-level walkable tiles as `:`.
 - **Walk test** (Route 1, savestate restored after): right 3 tiles then blocked, left 7 then blocked, up 1 then elevation-blocked, all exactly as the grid predicted.
 - **Behavior IDs** match vanilla FireRed's on Route 1 by appearance: 0x02 tall grass, 0x21 sand (snow), 0x23 ice, 0x3B ledge south, 0x60 cave door (warp to Icicle Cave), 0x84 sign. Walk-tested so far: collision and elevation only. Ledges, ice, water and doors are **not yet walk-tested**.
+- **Sideways stairs** (Unbound/CFRU, not vanilla): 0xB4 and 0xB5 move you diagonally. Walk-tested in Frozen Heights: RIGHT on 0xB4 (12,22) lands on (13,21); LEFT on 0xB5 (13,21) returns to (12,22). Pressing RIGHT from (12,21) into the 0xB5 tile does nothing (different elevation). Other orientations: pending. Ice (0x23) slides walk-tested on the same route.
 
 ## Abilities (#4)
 
