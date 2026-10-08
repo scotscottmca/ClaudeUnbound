@@ -604,7 +604,20 @@ def main():
     ap.add_argument("--bridge-port", type=int, default=8888)
     ap.add_argument("--replay", action="store_true", help="stream the run's history instead of following it")
     ap.add_argument("--speed", type=float, default=20, help="replay speed multiplier")
+    ap.add_argument("--mock", type=float, nargs="?", const=60, metavar="SECONDS",
+                    help="a scripted fake run (default 60 s): no bridge, temp memory dir, nothing real touched")
     a = ap.parse_args()
+    if a.mock:
+        import mock
+        ws = mock.workspace()
+        hub = Hub("mock")
+        graph = Graph(hub, os.path.join(ws, "memory"))
+        learned = Learnings(hub)
+        stats = Stats(hub)
+        m = mock.Mock(hub, graph, Transcript(hub, graph, learned), stats, a.mock)
+        threading.Thread(target=m.run, daemon=True).start()
+        serve(hub, a.port, [1])
+        return
     ws = os.path.abspath(a.workspace)
     hub = Hub(f"replay x{a.speed:g}" if a.replay else "live")
     graph = Graph(hub, os.path.join(ws, "memory"))

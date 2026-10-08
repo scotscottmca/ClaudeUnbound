@@ -284,10 +284,10 @@ function drawStats() {
 function onParty(s) {
   if (!s) return;
   partyT = s.src === "bridge" ? 0 : s.t;
-  $("partyage").textContent = s.src === "bridge" ? "live, read-only bridge" : "";
+  $("partyage").textContent = s.src === "bridge" ? "live, read-only bridge" : s.src === "mock" ? "mock data" : "";
   party = s; drawStats();
   $("gmode").textContent = s.mode || "-";
-  $("src").textContent = s.src === "bridge" ? "bridge :live" : "log.jsonl";
+  $("src").textContent = s.src === "bridge" ? "bridge :live" : s.src === "mock" ? "mock data" : "log.jsonl";
   $("src").className = "tag" + (s.src === "bridge" ? " live" : "");
   let html = "";
   const foes = (s.battle?.battlers || []).filter(b => b.side === "opponent");
