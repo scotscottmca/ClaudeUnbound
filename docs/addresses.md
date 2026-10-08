@@ -96,6 +96,10 @@ Pockets are arrays of u16 item ID + u16 count, no XOR, in EWRAM:
 
 - Lower/upper pages match FireRed's grid (`abcdef .` / `ghijkl ,` / `mnopqrs ` / `tuvwxyz `), mapped by typing each key and reading the buffer. Typing a capital switches to lower case automatically.
 
+## Objects
+
+- Object graphics 92 = item on the ground (Poké Ball sprite): verified on Route 2, objects at (8,28) and (17,27) sit exactly on the two ball sprites in a screenshot. Hidden items are bg events kind 7 (not handled).
+
 ## Pokédex
 
 | Name | Address | Status | Evidence |

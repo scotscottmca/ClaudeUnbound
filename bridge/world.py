@@ -24,8 +24,9 @@ WATER = {0x10, 0x11, 0x12, 0x15, 0x1A, 0x1B}
 ICE = {0x23, 0x26, 0x27}
 FORCED = set(range(0x40, 0x48)) | set(range(0x50, 0x59))
 WARP = set(range(0x60, 0x70)) | {0x71}
+ITEM_BALL = 92  # object graphics id of an item on the ground (verified: Route 2 (8,28)/(17,27) match the Poke Ball sprites on screen)
 HOP = 0x7F  # Unbound: a gap you hop over sideways, LEFT/RIGHT land two tiles on (Grim Woods (7,33), (9,33))
-LEGEND = {"@": "you", "N": "NPC/object", "T": "trainer", ".": "walkable", "#": "blocked", "G": "tall grass",
+LEGEND = {"@": "you", "N": "NPC/object", "o": "item on the ground (walk_to it to pick it up)", "T": "trainer", ".": "walkable", "#": "blocked", "G": "tall grass",
           "~": "water (Surf)", "W": "waterfall", "I": "ice", "F": "forced movement", "D": "warp/door",
           "S": "sign", ":": "walkable, but on another level (reach it via stairs or a ramp)", "^v<>": "ledge, jump in that direction", "=": "gap, hop over it left or right",
           " ": "outside the map"}
@@ -186,11 +187,11 @@ def read_world(p):
             player, player_elev = (x, y), ev[0x0B] & 0xF
             continue
         npcs.append({"id": ev[8], "x": x, "y": y, "facing": FACING.get(ev[0x18] & 0xF),
-                     "trainer": bool(ev[7]), "graphics": ev[5]})
+                     "trainer": bool(ev[7]), "graphics": ev[5], **({"item": True} if ev[5] == ITEM_BALL else {})})
 
     special = {(s["x"], s["y"]): "S" for s in signs}
     special |= {(wp["x"], wp["y"]): "D" for wp in warps}
-    special |= {(n["x"], n["y"]): "T" if n["trainer"] else "N" for n in npcs}
+    special |= {(n["x"], n["y"]): "T" if n["trainer"] else "o" if n.get("item") else "N" for n in npcs}
     special[player] = "@"
 
     def char(x, y):

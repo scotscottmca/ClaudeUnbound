@@ -78,6 +78,7 @@ def note_talk(s):
             json.dump(sorted(talked), f)
 last_fingerprint, unchanged, watchdog_fired = None, 0, 0
 last_map = None  # (group, num) after the previous action, for the UNEXPLORED note
+items_noted = set()  # object ids of ground items already pointed out on this visit
 battle_seen = False
 
 
@@ -177,7 +178,22 @@ def notes(s):
             out.append(f"UNEXPLORED: you left {W.map_name(None, *last_map)} with {len(skipped)} door(s) never entered "
                        f"at {', '.join(f'({x},{y})' for x, y in skipped[:8])}. Policy: enter every building and talk "
                        "to everyone once. Go back unless something stops you (a story gate, a locked door).")
+    if here != last_map:
+        items_noted.clear()  # a new visit: mention this map's items again
     last_map = here
+    if s["mode"] == "overworld":
+        # Items on the ground (user rule, 2026-10-08): point out each reachable one once per visit.
+        try:
+            w = W.read_world(p)
+            for n in w["npcs"]:
+                if n.get("item") and n["id"] not in items_noted:
+                    items_noted.add(n["id"])
+                    near = {(n["x"] + dx, n["y"] + dy) for dx, dy in bot.DIRS.values()}
+                    if bot.plan(w, near, set()) is not None:
+                        out.append(f"ITEM: an item on the ground at ({n['x']},{n['y']}) ('o' on the map) is reachable: "
+                                   "walk_to it to pick it up.")
+        except Exception:  # hints only
+            pass
     lead = next((m for m in s["party"] if not m["hp"].startswith("0/")), None)
     if s["mode"] == "overworld" and lead:
         hp, top = map(int, lead["hp"].split("/"))

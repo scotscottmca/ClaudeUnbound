@@ -25,6 +25,7 @@ How Claude should play Unbound. Unbound is very in-depth, so the goal is a thoro
 ## Pokémon
 
 - Battle every wild Pokémon encountered; catch it if possible (Poké Balls in the bag); run only if the fight may be lost. Decided 2026-10-08 (user).
+- Pick up every reachable item on the ground (Poké Ball sprites on the map) (user, 2026-10-08).
 - A species already caught isn't caught again: defeat it or run (user, 2026-10-08). The Pokédex owned flags decide.
 - Always catch special (non-random) encounters: Pokémon met as visible objects or events. Decided 2026-10-07.
 - Rename every Pokémon captured. Names are entirely Claude's choice.
