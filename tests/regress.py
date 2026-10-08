@@ -362,7 +362,7 @@ class PatrolGame:
         self.step(n)
 
 
-def sneak_with(game, target, templates=(), **kw):
+def sneak_with(game, target, templates=(), run=None, **kw):
     """Run bot.sneak on GAME with the world and mode reads pointed at it, and TEMPLATES as the map's object templates
     (rom_world npcs). Returns (SystemExit text or None, output)."""
     def world(_p=None):
@@ -383,7 +383,7 @@ def sneak_with(game, target, templates=(), **kw):
     buf = io.StringIO()
     try:
         with contextlib.redirect_stdout(buf):
-            bot.sneak(game, target, **kw)
+            run(game) if run else bot.sneak(game, target, **kw)
         return None, buf.getvalue()
     except SystemExit as e:
         return str(e), buf.getvalue()
@@ -551,6 +551,41 @@ def route_rom():
         assert key == "RIGHT" and bot.plan(w, goals, set()) is not None, (start, key)  # (114,25) is on the edge: []
     # exit_to keeps to the stretch of edge that borders the target (Route 13 has x >= 32 of that south edge).
     assert max(x for x, _ in bot.exit_to(W.rom_world(3, 72), (3, 73))[0]) == 31
+
+
+@case(emu=False)
+def watch_area():
+    # Watching from an alcove below a patrolled corridor: it reports the guard's real span, turning points and repeat
+    # period (14 steps of 16 frames), and lists the alcoves, not the corridor, as unseen. Watching from the corridor
+    # gets the player caught, and it says so.
+    tiles = {(x, 1) for x in range(15)} | {(x, 2) for x in range(5, 9)}
+    game = PatrolGame(tiles, (6, 2), (7, 1, "right"), {"left": (4, 1), "right": (11, 1)})
+    err, out = sneak_with(game, None, run=lambda g: bot.watch(g, frames=600, radius=8))
+    assert err is None and not game.caught, (err, out)
+    assert "walked x 4..11, y 1..1" in out and "(11, 1)" in out and "(4, 1)" in out, out
+    rep = int(out.split("repeats every ~")[1].split()[0])
+    assert abs(rep - 14 * 16) <= 8, out
+    hide = out.split("nearest first: ")[1].split("\n")[0]
+    # sight 1, turning at x 4 and 11: x 3..12 of the corridor is seen, its far ends and the alcoves aren't
+    assert all(t in hide for t in ("(5, 2)", "(1, 1)", "(13, 1)")), out
+    assert not any(t in hide for t in ("(3, 1)", "(6, 1)", "(12, 1)")), out
+    game = PatrolGame(tiles, (6, 1), (9, 1, "left"), {"left": (4, 1), "right": (11, 1)})
+    err, out = sneak_with(game, None, run=lambda g: bot.watch(g, frames=600))
+    assert game.caught and err and "a watcher saw this tile" in err, (err, out)
+
+
+@case(emu=False)
+def walk_sequence_guard():
+    # Crater gym id 11 (0x24, walk sequence right-down-up-left, home (24,6), range x4 y3), as recorded in the
+    # user's demo: a 14-step loop. The tiles the user waited on are safe; the one they were caught on isn't.
+    W._rom, W._links = W.RomFile(ROM), {}
+    w = W.rom_world(6, 2)
+    t = next(n for n in w["npcs"] if n["id"] == 11)
+    cyc = bot.sequence_cycle(w, dict(t, home=(t["x"], t["y"])))
+    assert len(cyc) == 14 and (28, 9, "down") in cyc and (24, 6, "left") in cyc and (23, 6, "left") not in cyc, cyc
+    live = dict(t, home=(t["x"], t["y"]), x=26, y=6, facing="right")
+    for watched in (bot.danger(dict(w, npcs=[live]), bot.SWEEP), bot.unseen(w, [t])):
+        assert not watched & {(22, 6), (26, 7), (28, 12)} and (23, 6) in watched
 
 
 @case(emu=True)

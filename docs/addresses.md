@@ -105,7 +105,7 @@ Pockets are arrays of u16 item ID + u16 count, no XOR, in EWRAM:
 | Field | Offset | Status | Evidence |
 |---|---|---|---|
 | graphicsId | +0x05 | verified | Guard 22, object id 3 91, item ball 92. Matches the template (+1) |
-| movementType | +0x06 | verified | Vanilla numbering. Object id 3: 8 (FACE_DOWN), facing down. Guard id 7: 0x1B (WALK_LEFT_AND_RIGHT), seen walking left and right along row 27. Matches the template (+9) |
+| movementType | +0x06 | verified | Vanilla numbering. Object id 3: 8 (FACE_DOWN), facing down. Guard id 7: 0x1B (WALK_LEFT_AND_RIGHT), seen walking left and right along row 27. Id 11: 0x24 (WALK_SEQUENCE_RIGHT_DOWN_UP_LEFT), range x4 y3 from (24,6): recorded looping right, down, up, left, 14 steps of 16 frames, matching vanilla `MoveNextDirectionInSequence` (`bot.sequence_cycle`). Matches the template (+9) |
 | trainerType | +0x07 | verified | 1 on the guard and template trainers, 0 on others. Matches the template (+0xC, u16) |
 | initialCoords | +0x0C | verified | (18,27)+7 for the guard = the template position |
 | facing / movement direction | +0x18 low / high nibble | verified | 3 while walking left, 4 while walking right |

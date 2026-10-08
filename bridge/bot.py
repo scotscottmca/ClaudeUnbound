@@ -168,39 +168,70 @@ SEEDED = set()  # (group, num, id) whose TURNS were seeded from the template (on
 # at its start, so it patrols start .. start +- range. Verified on guard 7 (0x1B, (18,27), range 9: x 9..18).
 SET_OFF = {0x19: "up", 0x1A: "down", 0x1B: "left", 0x1C: "right"}
 TEMPLATE_FACING = {7: "up", 8: "down", 9: "left", 10: "right"}  # vanilla FACE_* movement types
+# Vanilla WALK_SEQUENCE_* (0x1D..0x34): four legs, in this order, round its movement range. Verified only for 0x24
+# (Crater gym id 11, home (24,6), range x4 y3: right to 28, down to 9, up to 6, left to 24, 14 steps, 224 frames).
+WALK_SEQUENCE = {mv: seq.split() for mv, seq in enumerate([
+    "up right left down", "right left down up", "down up right left", "left down up right",
+    "up left right down", "left right down up", "down up left right", "right down up left",
+    "left up down right", "up down right left", "right left up down", "down right left up",
+    "right up down left", "up down left right", "left right up down", "down left right up",
+    "up left down right", "down right up left", "left down right up", "right up left down",
+    "up right down left", "down left up right", "left up right down", "right down left up"], 0x1D)}
+
+
+def sequence_cycle(w, n):
+    """The (x, y, facing) after each step of walk-sequence watcher N (HOME, RANGE, movement), one full cycle. A leg
+    ends at the edge of its movement range (or a wall); a leg undoing an earlier one ends back level with home, and
+    the last leg ends at home, where the sequence restarts (vanilla MoveNextDirectionInSequence)."""
+    seq, (x, y) = WALK_SEQUENCE[n["movement"]], n["home"]
+    i, out, keys = 0, [], []
+    while (x, y, i) not in keys and len(out) < 256:
+        keys.append((x, y, i))
+        for _ in range(4):
+            if i == 3 and (x, y) == tuple(n["home"]):
+                i = 0
+            dx, dy = DIRS[seq[i].upper()]
+            ax = 0 if dx else 1
+            back = OPPOSITE[seq[i]] in seq[:i] and (x, y)[ax] == n["home"][ax] and i < 3
+            if back or not _walkable(w, n, (x + dx, y + dy)):
+                i = (i + 1) % 4
+                continue
+            break
+        else:
+            return None  # boxed in: it never moves
+        x, y = x + dx, y + dy
+        out.append((x, y, seq[i]))
+    return out[keys.index((x, y, i)):] if (x, y, i) in keys else None
 
 
 class Patrol:
-    """Exact model of a back-and-forth walker whose two turning points are known (TURNS: {facing: tile}). It walks a
-    tile per WATCHER_FRAMES and turns at an end within the same step, so its (tile, facing) runs through a cycle of
-    2 * (hi - lo) states, one per step: (lo, minus), (lo+1, plus) .. (hi, plus), (hi-1, minus) .. (lo+1, minus).
+    """Exact model of a walker on a fixed cycle of (x, y, facing) states, one per step of WATCHER_FRAMES: a
+    back-and-forth walker whose two turning points are known (TURNS: {facing: tile}), whose cycle is (lo, minus),
+    (lo+1, plus) .. (hi, plus), (hi-1, minus) .. (lo+1, minus); or a walk-sequence walker (CYCLE, from its template).
     One read gives the cycle index, and the frame its current step began to within the 16 frames it stays put;
     each later read narrows that frame (a read just after a step pins it). Then any future frame's state is known."""
 
-    def __init__(self, turns):
-        self.minus, self.plus = ("left", "right") if "left" in turns else ("up", "down")
-        self.lo, self.hi = turns[self.minus], turns[self.plus]
-        self.ax = 0 if self.minus == "left" else 1
-        self.span = self.hi[self.ax] - self.lo[self.ax]
-        self.period = 2 * self.span
+    def __init__(self, turns=None, cycle=None):
+        if cycle is None:
+            minus, plus = ("left", "right") if "left" in turns else ("up", "down")
+            lo, hi = turns[minus], turns[plus]
+            ax = 0 if minus == "left" else 1
+            span = hi[ax] - lo[ax]
+
+            def at(v, f):
+                t = list(lo)
+                t[ax] += v
+                return (*t, f)
+            cycle = [at(0, minus)] + [at(v, plus) for v in range(1, span + 1)] + [at(v, minus) for v in range(span - 1, 0, -1)]
+        self.cycle, self.period = cycle, len(cycle)
+        self.at = {s: i for i, s in enumerate(cycle)}
         self.ref = None  # (cycle index, earliest and latest frame that state began)
 
     def index(self, x, y, f):
-        if (x, y)[1 - self.ax] != self.lo[1 - self.ax]:
-            return None
-        v = (x, y)[self.ax] - self.lo[self.ax]
-        if f == self.plus and 0 < v <= self.span:
-            return v
-        if f == self.minus and 0 <= v < self.span:
-            return (self.period - v) % self.period
-        return None
+        return self.at.get((x, y, f))
 
     def state(self, c):
-        c %= self.period
-        v, f = (c, self.plus) if 0 < c <= self.span else ((self.period - c) % self.period, self.minus)
-        t = list(self.lo)
-        t[self.ax] += v
-        return (*t, f)
+        return self.cycle[c % self.period]
 
     def sync(self, frame, x, y, f):
         """Fold in a read of (x, y, f) taken at FRAME. False if it contradicts the model (then re-anchored on it)."""
@@ -258,6 +289,11 @@ def futures(w, n, ahead=SNEAK_AHEAD, turns=None, since=0):
             return back
         return {(x + dx, y + dy, f)} | (set() if f in turns else back)
 
+    if mv in WALK_SEQUENCE and n.get("home") and (cyc := sequence_cycle(w, n)):
+        c = Patrol(cycle=cyc).index(n["x"], n["y"], n["facing"])
+        if c is None:  # off its cycle (held up, or not this template's walker): anywhere on it
+            return set(cyc) | {(n["x"], n["y"], n["facing"])}
+        return {cyc[(c + i) % len(cyc)] for i in range(since, ahead + 1)}
     states = {(n["x"], n["y"], n["facing"])}
     seen = set(states) if since == 0 else set()
     for i in range(1, ahead + 1):
@@ -326,6 +362,9 @@ def unseen(w, ghosts):
     template position); relax once that is verified on Unbound."""
     out = set()
     for n in ghosts:
+        if n["movement"] in WALK_SEQUENCE and (cyc := sequence_cycle(w, dict(n, home=(n["x"], n["y"])))):
+            out |= _view(w, n, set(cyc))
+            continue
         mv, spots = n["movement"], reach(w, n)
         rx, ry = n["range"] & 0xF, n["range"] >> 4
         faces = (list(OPPOSITE) if n.get("sees_all") else [TEMPLATE_FACING[mv]] if mv in TEMPLATE_FACING
@@ -413,6 +452,14 @@ def sneak(p, target, max_steps=80, max_wait=2400):
                     print(f"id {n['id']}: patrol seeded from its template, {seed} (until a read contradicts it)")
         turns_of = watch(npcs, here, now)
         for n in npcs:
+            if n.get("movement") in WALK_SEQUENCE and n.get("home") and n.get("sight"):
+                cyc = sequence_cycle(w, n)
+                m = models.get(n["id"]) or (Patrol(cycle=cyc) if cyc else None)
+                if m and m.sync(now, n["x"], n["y"], n["facing"]):
+                    models[n["id"]] = m
+                else:  # held up (by the player?) or off its cycle: unmodelled until a read re-anchors it
+                    models.pop(n["id"], None)
+                continue
             known = TURNS.get((g, num, n["id"]), {})
             both = {"left", "right"} <= set(known) or {"up", "down"} <= set(known)
             if n.get("movement") not in BACK_AND_FORTH or not both:
@@ -831,3 +878,49 @@ if __name__ == "__main__":
     p = Probe()
     for target in sys.argv[1:]:
         go(p, target)
+
+
+def watch(p, frames=480, every=4, radius=10):
+    """Stand still FRAMES frames and report how every nearby object actually moves: per object the tiles it stood
+    on, its facings, where it turned, and how long its pattern takes to repeat; for watchers (trainers with a sight
+    range), every tile they were seen to look at or stand on. Then the open tiles within RADIUS that no watcher saw
+    the whole time: candidate hiding spots. Empirical, so it covers movement types no model knows. Stops if a
+    script or battle starts (the player was standing where a watcher looks)."""
+    w = W.read_world(p)
+    if raw(p)["mode"] != "overworld":
+        raise SystemExit("not in the overworld: finish the dialog or battle first")
+    hist, seen, here = {}, set(), None
+    for _ in range(max(1, frames // every)):
+        if raw(p)["mode"] != "overworld":
+            raise SystemExit(f"stopped: a script or battle started while watching from {here}: a watcher saw this tile. "
+                             "Read it (advance_dialog).")
+        f = p.read32(CLOCK)
+        npcs, here, _ = W.objects(p)
+        for n in npcs:
+            hist.setdefault(n["id"], []).append((f, n["x"], n["y"], n["facing"], n))
+            if n.get("sight") and n.get("facing"):
+                seen |= _view(w, n, {(n["x"], n["y"], n["facing"])})
+        p.step(every)
+    print(f"watched {frames} frames (~{frames / 60:.0f} s game time) from {here}")
+    for i, h in sorted(hist.items()):
+        n = h[-1][4]
+        states = [(x, y, fc) for _, x, y, fc, _ in h]
+        tiles = sorted({(x, y) for x, y, _ in states})
+        turns = sorted({(x, y) for (x, y, a), (_, _, b) in zip(states, states[1:]) if a != b})
+        rep = next((h[k][0] - h[0][0] for k in range(1, len(h)) if states[k] == states[0]
+                    and any(s[:2] != states[0][:2] for s in states[1:k])), None)
+        kind = (f"WATCHER sight {n['sight']}" if n.get("sight") else "trainer" if n.get("trainer") else "npc")
+        xs, ys = [t[0] for t in tiles], [t[1] for t in tiles]
+        print(f"id {i} ({kind}, movement 0x{n.get('movement') or 0:X}): "
+              + ("did not move" if len(tiles) == 1 else f"walked x {min(xs)}..{max(xs)}, y {min(ys)}..{max(ys)} "
+                 f"({len(tiles)} tiles)") + f", facings {sorted({fc for *_, fc in states if fc})}"
+              + (f", turned at {turns[:8]}" if turns and len(tiles) > 1 else "")
+              + (f", pattern repeats every ~{rep} frames" if rep else ", no full repeat seen (watch longer)")
+              + f"; now ({n['x']},{n['y']}) facing {n['facing']}")
+    walk = set()
+    plan(dict(w, player=list(here)), set(), set(), visit=walk)  # every tile the player can walk to from here
+    hide = sorted((t for t in walk - seen if abs(t[0] - here[0]) <= radius and abs(t[1] - here[1]) <= radius),
+                  key=lambda t: abs(t[0] - here[0]) + abs(t[1] - here[1]))
+    print(f"tiles no watcher looked at or stood on while watched, nearest first: {hide[:30]}")
+    print("A tile next to a patrol path but off its line of sight is a hiding spot; a watcher only sees straight "
+          "ahead, so walking behind one as it walks away is unseen too. Time crossings from the repeat period.")
