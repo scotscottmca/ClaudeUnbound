@@ -222,10 +222,20 @@ def t_advance_dialog(a):
     """A through dialog, collecting every box; stops before answering a question or when stuck."""
     seen, waited = [], 0
     if raw(p)["mode"] == "battle":  # battle messages: A through them until a menu, a question or the end
-        b, _ = battle.wait_for_menu(p, seen=seen)
+        for _ in range(a.get("max_presses", 30)):
+            b, _ = battle.wait_for_menu(p, frames=240, seen=seen)
+            mode = raw(p)["mode"]
+            if b is not None or mode != "battle":
+                break
+            text = ((get_state(p).get("battle") or {}).get("text") or "").strip()
+            if text.endswith("?"):  # a Yes/No question: the agent answers it
+                if not seen or seen[-1] != text:
+                    seen.append(text)
+                break
+            # Not a question: a box that waits for A without an active printer (level-up stats, "You defeated ...")
+            p.press("A", 4)
+            p.step(20)
         mode = raw(p)["mode"]
-        if b is None and mode == "battle" and not seen:  # a Yes/No question: its text is already finished
-            seen.append((get_state(p).get("battle") or {}).get("text"))
         return {"boxes": seen, "now": mode,
                 "battle": "your menu is up" if b is not None else "battle over" if mode != "battle" else "a question is waiting"}
     for _ in range(a.get("max_presses", 30) + 16):
