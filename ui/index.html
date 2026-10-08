@@ -23,9 +23,9 @@ header .grow { flex: 1; }
 .tag { font: 11px var(--mono); padding: 1px 7px; border-radius: 9px; border: 1px solid var(--line); color: var(--dim); }
 .tag.live { color: var(--good); border-color: #2e5f38; }
 select { background: var(--panel); color: var(--text); border: 1px solid var(--line); border-radius: 4px; font: inherit; }
-main { height: calc(100% - 40px); display: grid; grid-template-rows: minmax(0, 1fr) 124px 40%; }
+main { height: calc(100% - 40px); display: grid; grid-template-rows: minmax(0, 1fr) 150px 41%; }
 .row { display: grid; grid-template-columns: minmax(340px, 42%) 1fr; min-height: 0; }
-.row.bottom { grid-template-columns: 1fr 1fr; }
+.row.bottom { grid-template-columns: minmax(0, .85fr) minmax(0, 1.15fr); }
 section { border-right: 1px solid var(--line); border-bottom: 1px solid var(--line); display: flex;
   flex-direction: column; min-width: 0; min-height: 0; position: relative; }
 h2 { margin: 0; padding: 7px 12px; font-size: 11px; font-weight: 600; text-transform: uppercase;
@@ -44,7 +44,9 @@ h2 .note { text-transform: none; letter-spacing: 0; font-weight: 400; color: var
 #paused { display: none; color: var(--warn); }
 
 /* router */
-#router svg { width: 100%; flex: 1; min-height: 0; padding: 0 8px; }
+#rbody { flex: 1; min-height: 0; display: flex; flex-direction: column; }
+#router svg { display: block; width: 100%; flex: 1 1 0; min-height: 150px; }
+#rside { flex: 0 0 auto; max-height: 104px; overflow: hidden; }
 .node rect { fill: #1b232d; stroke: var(--line); stroke-width: 1.5; transition: stroke .2s, fill .2s; }
 .node text { fill: var(--text); font-size: 14px; font-weight: 600; } .node .sub { fill: var(--dim); font-size: 11px; font-weight: 400; }
 .node.hot rect { fill: #232c39; }
@@ -54,15 +56,26 @@ h2 .note { text-transform: none; letter-spacing: 0; font-weight: 400; color: var
 .elabel { font: 10px var(--mono); fill: var(--warn); transition: opacity 1s; }
 #counts { display: flex; gap: 14px; padding: 2px 12px 4px; font: 12px var(--mono); color: var(--dim); flex-wrap: wrap; }
 #counts span b { font-weight: 600; }
-#trail { font: 12px/1.5 var(--mono); padding: 0 12px 8px; height: 92px; overflow: hidden; }
+#trail { font: 12px/1.5 var(--mono); padding: 0 12px 8px; overflow: hidden; }
+#trail div { margin-bottom: 4px; white-space: normal !important; display: -webkit-box; -webkit-line-clamp: 1; -webkit-box-orient: vertical; margin-bottom: 1px; }
 #trail div { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; color: var(--dim); }
 #trail .trig { color: var(--warn); } #trail .back { color: var(--good); }
 
 /* party */
 #hdr2 { display: flex; gap: 14px; padding: 0 12px 6px; color: var(--dim); font-size: 12px; flex-wrap: wrap; }
 #hdr2 b { color: var(--text); font-weight: 500; }
-#mons { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; align-content: start; padding-top: 2px; }
-.mon { display: grid; grid-template-columns: 1fr auto; gap: 4px 10px; padding: 9px 12px; border: 1px solid var(--line);
+#mons { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px; align-content: start; padding-top: 2px; }
+#stats { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 4px 14px; padding: 0 12px 8px; font-size: 12px; }
+#stats div { display: flex; flex-direction: column; min-width: 0; }
+#stats .k { color: var(--dim); font-size: 10px; text-transform: uppercase; letter-spacing: .06em; }
+#stats b { font-weight: 600; font-size: 14px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+#stats .sm { color: var(--dim); font: 11px var(--mono); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.badge { display: inline-block; width: 11px; height: 11px; border-radius: 50%; border: 1.5px solid var(--faint); margin-right: 3px; vertical-align: -1px; }
+.badge.on { background: var(--write); border-color: var(--write); box-shadow: 0 0 6px #f2cc6088; }
+.mon .it { grid-column: 1 / 3; font-size: 11px; color: var(--dim); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.xp { grid-column: 1 / 3; display: grid; grid-template-columns: 24px 1fr auto; gap: 6px; align-items: center; font: 10px var(--mono); color: var(--faint); }
+.xp .bar { height: 4px; } .xp .bar i { background: var(--main); }
+.mon { display: grid; grid-template-columns: 1fr auto; gap: 4px 10px; padding: 8px 12px; border: 1px solid var(--line);
   border-radius: 8px; background: var(--panel); align-items: center; }
 .mon .nm { font-weight: 600; font-size: 16px; } .mon .sp { color: var(--dim); font-size: 13px; font-weight: 400; }
 .mon.lead { border-color: #2b4a6b; }
@@ -71,7 +84,7 @@ h2 .note { text-transform: none; letter-spacing: 0; font-weight: 400; color: var
 .hp { font: 13px var(--mono); color: var(--dim); text-align: right; }
 .st { font: 10px var(--mono); padding: 0 5px; border-radius: 3px; background: #3a2a1e; color: var(--opus); margin-left: 6px; }
 .mon.lead .nm::before { content: "▸ "; color: var(--main); }
-.foe { grid-column: 1 / 3; border-color: #5a2f2f; background: #1d1517; }
+.foe { grid-column: 1 / -1; min-height: 0; border-color: #5a2f2f; background: #1d1517; }
 .foe .nm { color: var(--bad); }
 
 /* memory */
@@ -86,10 +99,12 @@ h2 .note { text-transform: none; letter-spacing: 0; font-weight: 400; color: var
 @keyframes pop { from { opacity: 0; transform: translateY(-10px) scale(.97); } }
 
 /* learnings */
-#learns { display: flex; gap: 10px; overflow-x: auto; overflow-y: hidden; padding: 0 12px 10px; flex: 1; }
+#learns { display: flex; gap: 10px; overflow-x: auto; overflow-y: hidden; padding: 0 12px 8px; flex: 1; align-items: stretch; }
 #learns::-webkit-scrollbar { height: 8px; } #learns::-webkit-scrollbar-thumb { background: var(--line); border-radius: 4px; }
-#learn .item { flex: 0 0 330px; padding: 6px 10px; border: 1px solid var(--line); border-radius: 6px; background: var(--panel);
-  font-size: 12px; overflow: hidden; display: -webkit-box; -webkit-line-clamp: 4; -webkit-box-orient: vertical; }
+#learn .item { flex: 0 0 350px; padding: 6px 10px; border: 1px solid var(--line); border-radius: 6px; background: var(--panel);
+  font-size: 12px; line-height: 1.4; overflow: hidden; cursor: pointer; }
+#learn .item .tx { display: -webkit-box; -webkit-line-clamp: 5; -webkit-box-orient: vertical; overflow: hidden; }
+#learn .item.open { flex-basis: 560px; overflow-y: auto; } #learn .item.open .tx { -webkit-line-clamp: unset; }
 #learn .meta { font: 10px var(--mono); color: var(--faint); }
 #learn .item.new { animation: glow 3s ease-out; }
 @keyframes glow { from { background: #1f3322; } }
@@ -102,9 +117,6 @@ h2 .note { text-transform: none; letter-spacing: 0; font-weight: 400; color: var
   <span id="speedbox" hidden><span class="k">speed</span><select id="speed">
     <option>1</option><option>5</option><option>20</option><option>60</option><option>200</option></select></span>
   <span class="grow"></span>
-  <span><span class="k">map</span><b id="map">-</b> <span id="pos" class="k"></span></span>
-  <span><span class="k">badges</span><b id="badges">-</b></span>
-  <span><span class="k">money</span><b id="money">-</b></span>
   <span id="gmode" class="tag">-</span>
   <span id="src" class="tag">-</span>
 </header>
@@ -128,14 +140,16 @@ h2 .note { text-transform: none; letter-spacing: 0; font-weight: 400; color: var
   <div class="row bottom">
     <section id="router">
       <h2>Model router</h2>
-      <svg viewBox="0 0 420 200" preserveAspectRatio="xMidYMid meet">
-        <g id="edges"></g><g id="nodes"></g><g id="pulses"></g>
-      </svg>
-      <div id="counts"></div>
-      <div id="trail"></div>
+      <div id="rbody">
+        <svg viewBox="0 0 420 200" preserveAspectRatio="xMidYMid meet">
+          <g id="edges"></g><g id="nodes"></g><g id="pulses"></g>
+        </svg>
+        <div id="rside"><div id="counts"></div><div id="trail"></div></div>
+      </div>
     </section>
     <section id="party">
-      <h2>Party <span class="note" id="partyage"></span></h2>
+      <h2>Trainer &amp; party <span class="note" id="partyage"></span></h2>
+      <div id="stats"></div>
       <div class="scroll" id="mons"></div>
     </section>
   </div>
@@ -210,7 +224,7 @@ function onSpawn(ev, quiet) {
   $("s-" + a).textContent = `${AG[a].sub} · ×${spawnN[a]}`;
   const row = div("", `<span class="time">${hhmm(ev.t)}</span><span class="trig">${esc(ev.trigger)}</span> → ${esc(ev.agent)}: ${esc(ev.desc)}`);
   trailRows[ev.id] = row; $("trail").prepend(row);
-  while ($("trail").childElementCount > 6) $("trail").lastElementChild.remove();
+  while ($("trail").childElementCount > 4) $("trail").lastElementChild.remove();
   add(div("spawn", `<span class="time">${hhmm(ev.t)}</span>⇢ ${esc(ev.agent)} <span style="color:var(--warn)">[${esc(ev.trigger)}]</span> ${esc(ev.desc)}`));
   if (quiet) return;
   pulse(a, false);
@@ -238,14 +252,29 @@ function hpbar(hp) {
   const col = f > .5 ? "--good" : f > .2 ? "--warn" : "--bad";
   return `<div class="bar"><i style="width:${(f * 100).toFixed(0)}%;background:var(${col})"></i></div>`;
 }
-let partyT = 0;
+let partyT = 0, party = null, stats = null;
+const dur = s => s >= 3600 ? `${Math.floor(s / 3600)}h ${String(Math.floor(s / 60) % 60).padStart(2, "0")}m` : `${Math.floor(s / 60)}m`;
+function drawStats() {
+  const s = party || {}, r = stats;
+  const map = s.map && typeof s.map === "object" ? s.map.name : s.map;
+  const cell = (k, v, sm = "") => `<div><span class="k">${k}</span><b>${v}</b>${sm ? `<span class="sm">${sm}</span>` : ""}</div>`;
+  const badges = s.badges != null ? Array.from({length: 8}, (_, i) => `<i class="badge${i < s.badges ? " on" : ""}"></i>`).join("") : "-";
+  const tok = r ? Object.entries(r.tokens).map(([m, n]) => `${m.replace(/^claude-|-\d+-\d+$/g, "")} ${(n / 1000).toFixed(0)}k`).join(" · ") : "";
+  $("stats").innerHTML =
+    cell("Location", esc(map || "-"), s.pos ? `(${s.pos.join(", ")})` : "") +
+    cell("Badges", badges, s.badges != null ? `${s.badges} / 8` : "") +
+    cell("Money", s.money != null ? "₽" + s.money.toLocaleString() : "-") +
+    cell("Pokédex", s.dex_owned != null ? `${s.dex_owned} caught` : "-", r ? `${r.catches.length} caught this run` : "") +
+    cell("Play time", s.playtime ? `${s.playtime[0]}h ${String(s.playtime[1]).padStart(2, "0")}m` : "-", "in-game clock") +
+    cell("Run time", r && r.first ? dur(r.last - r.first) : "-", r ? `${r.actions.toLocaleString()} agent actions` : "") +
+    cell("Cost", r ? "$" + r.cost.toFixed(2) : "-", r ? `${r.costed}/${r.chunks} chunks reported` : "") +
+    cell("Output tokens", r ? Object.values(r.tokens).reduce((a, b) => a + b, 0).toLocaleString() : "-", tok);
+}
 function onParty(s) {
   if (!s) return;
   partyT = s.src === "bridge" ? 0 : s.t;
   $("partyage").textContent = s.src === "bridge" ? "live, read-only bridge" : "";
-  const map = s.map && typeof s.map === "object" ? s.map.name : s.map;
-  $("map").textContent = map || "-"; $("pos").textContent = s.pos ? `(${s.pos.join(", ")})` : "";
-  $("badges").textContent = s.badges ?? "-"; $("money").textContent = s.money != null ? "₽" + s.money.toLocaleString() : "-";
+  party = s; drawStats();
   $("gmode").textContent = s.mode || "-";
   $("src").textContent = s.src === "bridge" ? "bridge :live" : "log.jsonl";
   $("src").className = "tag" + (s.src === "bridge" ? " live" : "");
@@ -255,7 +284,9 @@ function onParty(s) {
   const lead = (s.party || []).findIndex(p => +String(p.hp).split("/")[0] > 0);
   (s.party || []).forEach((p, i) => {
     const sp = p.species ? `${esc(p.species)}${p.level ? " Lv" + p.level : ""}` : "";
-    html += `<div class="mon${i === lead ? " lead" : ""}"><div><span class="nm">${esc(p.name)}</span> <span class="sp">${p.species !== p.name ? sp : (p.level ? "Lv" + p.level : "")}</span>${p.status ? `<span class="st">${esc(p.status)}</span>` : ""}</div><div class="hp">${esc(p.hp)}</div><div style="grid-column:1/3">${hpbar(p.hp)}</div></div>`;
+    const xp = p.exp ? `<div class="xp"><span>EXP</span><div class="bar"><i style="width:${(100 * p.exp[0] / p.exp[1]).toFixed(0)}%"></i></div><span>${p.exp[1] - p.exp[0]} to go</span></div>` : "";
+    const it = p.species ? `<div class="it">${p.item ? "holds " + esc(p.item) : "no held item"}</div>` : "";
+    html += `<div class="mon${i === lead ? " lead" : ""}"><div><span class="nm">${esc(p.name)}</span> <span class="sp">${p.species !== p.name ? sp : (p.level ? "Lv" + p.level : "")}</span>${p.status ? `<span class="st">${esc(p.status)}</span>` : ""}</div><div class="hp">${esc(p.hp)}</div><div style="grid-column:1/3">${hpbar(p.hp)}</div>${xp}${it}</div>`;
   });
   $("mons").innerHTML = html || `<div style="color:var(--faint);padding:8px 0">no party data yet</div>`;
 }
@@ -316,9 +347,12 @@ let nLearn = 0;
 function onLearn(ev, quiet) {
   nLearn++; $("lcount").textContent = `${nLearn}`;
   const src = ev.who === "refiner" ? "refiner" : ev.who === "file" ? "learnings.md" : ev.who === "main" ? "agent" : ev.who;
-  const item = div("item" + (quiet || ev.quiet ? "" : " new"), `<div class="meta">${hhmm(ev.t)} · ${esc(src)} · ${esc(ev.file)}</div>${esc(ev.text)}`);
-  $("learns").prepend(item);
-  while ($("learns").childElementCount > 200) $("learns").lastElementChild.remove();
+  const item = div("item" + (quiet || ev.quiet ? "" : " new"), `<div class="meta">${hhmm(ev.t)} · ${esc(src)} · ${esc(ev.file)}</div><div class="tx">${esc(ev.text)}</div>`);
+  item.title = ev.text; item.onclick = () => item.classList.toggle("open");
+  const L = $("learns"), atEnd = L.scrollLeft + L.clientWidth >= L.scrollWidth - 40;
+  L.appendChild(item);
+  while (L.childElementCount > 200) L.firstElementChild.remove();
+  if (atEnd || !quiet) L.scrollLeft = L.scrollWidth;
   if (quiet || ev.quiet) return;
   const t = div("toast", `<div class="h">Learned something new · ${esc(src)}</div>${esc(ev.text.length > 220 ? ev.text.slice(0, 219) + "…" : ev.text)}`);
   $("toasts").prepend(t);
@@ -339,6 +373,7 @@ function handle(ev, quiet) {
     case "graph": onGraph(ev.graph); break;
     case "party": onParty(ev.party); break;
     case "counts": onCounts(ev.counts); break;
+    case "stats": stats = ev.stats; drawStats(); break;
   }
 }
 function connect() {
@@ -350,7 +385,7 @@ function connect() {
     $("mode").textContent = ev.mode; $("mode").className = "tag" + (ev.mode === "live" ? " live" : "");
     $("speedbox").hidden = !ev.mode.startsWith("replay");
     if (ev.mode.startsWith("replay")) $("speed").value = ev.mode.split("x")[1];
-    onGraph(ev.graph); onParty(ev.party); onCounts(ev.counts);
+    onGraph(ev.graph); stats = ev.stats; onParty(ev.party); drawStats(); onCounts(ev.counts);
     ev.events.forEach(e => handle(e, true));
   };
   es.onerror = () => { $("mode").textContent = "reconnecting"; $("mode").className = "tag"; };

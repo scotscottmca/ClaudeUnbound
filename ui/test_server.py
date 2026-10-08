@@ -21,4 +21,12 @@ assert s.result_label(txt(json.dumps([{"key": "UP", "moved": True}, {"key": "UP"
 assert s.result_label({"content": "x"}, "Edit") == "saved"
 assert s.tool_label("mcp__unbound__walk_to", {"x": 20, "y": 21}) == "walk_to (20, 21)"
 assert s.mem_file(r"D:\run\memory\learnings.md") == "learnings.md" and s.mem_file("D:/run/log.jsonl") is None
+# exp curves: medium slow Lv10 = 560 (docs/addresses.md, Larvitar); medium fast n^3; the six curves meet at 100
+assert s.exp_for(3, 10) == 560 and s.exp_for(0, 25) == 15625 and s.exp_for(5, 1) == 0
+assert [s.exp_for(r, 100) for r in range(6)] == [1000000, 600000, 1640000, 1059860, 800000, 1250000]
+
+st = s.Stats(None)
+st.log({"t": 1, "step": 1, "tool": "throw_ball", "args": {}, "result": "\"threw a Poke Ball; caught Swinub; a question\""})
+st.usage({"t": 2, "cost_usd": 0.5, "models": {"claude-haiku-5-5": {"outputTokens": 10}}})
+assert st.s["catches"] == ["Swinub"] and st.s["actions"] == 1 and st.s["tokens"] == {"claude-haiku-5-5": 10}
 print("ok")
