@@ -67,6 +67,8 @@ Failures, their root causes, and the rule each one taught. Read this before buil
 
 | 2026-10-07 | The agent, stuck on a forced-switch screen, called load_state() unnamed and rolled the run back two hours (three captures lost; recovered from an autosave 14 s earlier) | I had given an irreversible tool a convenient default ("newest savestate") to fix a missing-argument error | Irreversible tools never get defaults: they take explicit arguments and pass the verification gate. Convenience defaults are only for reversible actions |
 
+| 2026-10-08 | On Route 2, switch_to("Ion") stopped with "Ion may already be in battle" though Ion was benched, and get_state's party came back in different orders on consecutive reads | While the battle party screen is open, gPlayerParty is rearranged into battle order (Pokémon in battle first) and restored on close; switch_to took its menu row from the field order read before opening the screen. After any earlier switch the two orders differ, so the cursor landed on the active Pokémon. Forced switches worked only because that screen was already open | 1: a list index is only valid in the order it was read in. switch_to now picks the row after the screen is open; get_state documents which order it shows (addresses.md, battle party screen) |
+
 ## Signals found along the way
 
 - Battle: player controller `gBattlerControllerFuncs[0]` (0x03004FE0) = 0x0802E439 at the action menu, 0x0802EA11 at the move menu. Cursors: action 0x02023FF8 (0 Fight, 1 Cube, 2 Pokémon, 3 Run), move 0x02023FFC.

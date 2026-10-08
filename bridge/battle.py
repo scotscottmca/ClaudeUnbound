@@ -139,8 +139,7 @@ def party_cursor_to(p, target):
     return p.read8(PARTY_MENU + 9) == target
 
 
-def switch_to(p, name):
-    """Send NAME in: from the forced "Choose a Pokemon" screen, or from your battle menu (Pokemon)."""
+def _party_slot(p, name):
     party = get_state(p)["party"]
     # Names can repeat (two uncaught-nickname Makuhita): prefer one that can still fight.
     matches = [i for i, m in enumerate(party) if m["name"].lower() == name.lower()]
@@ -149,6 +148,14 @@ def switch_to(p, name):
         raise SystemExit(f"no {name!r} in the party: {[m['name'] for m in party]}")
     if party[slot]["hp"].startswith("0/"):
         raise SystemExit(f"{name} has fainted; healthy: {[m['name'] for m in party if not m['hp'].startswith('0/')]}")
+    return slot
+
+
+def switch_to(p, name):
+    """Send NAME in: from the forced "Choose a Pokemon" screen, or from your battle menu (Pokemon).
+    While the battle party screen is open, gPlayerParty is rearranged into battle order (the menu's rows,
+    active Pokemon first); otherwise it's in field order. So the row is looked up once the screen is open."""
+    _party_slot(p, name)  # fail early, before opening anything
     if p.read32(0x030030F4) != CB2_BATTLE_PARTY:
         b, menu = wait_for_menu(p)
         if b is None:
@@ -166,6 +173,7 @@ def switch_to(p, name):
         else:
             raise SystemExit("the party screen didn't open")
         p.step(20)
+    slot = _party_slot(p, name)  # menu row: the party is in battle order now
     if not party_cursor_to(p, slot):
         raise SystemExit(f"couldn't put the cursor on {name}")
     p.press("A", 4)  # opens Send Out / Shift
@@ -173,7 +181,8 @@ def switch_to(p, name):
     p.press("A", 4)  # confirm
     p.step(60)
     if p.read32(0x030030F4) == CB2_BATTLE_PARTY:
-        raise SystemExit(f"still on the party screen: {name} may already be in battle")
+        raise SystemExit(f"still on the party screen: the game refused {name} (already in battle, or your "
+                         "Pokemon is trapped, e.g. by Mean Look): look at the screen")
     return f"sent in {name}; {_settle(p)}"
 
 

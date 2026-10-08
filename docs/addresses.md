@@ -53,6 +53,18 @@ Pockets are arrays of u16 item ID + u16 count, no XOR, in EWRAM:
 
 - After the throw: "Claude used\nPoké Ball!", then "Gotcha!\nZubat was caught!" (waits for A), exp and level-up messages (the level-up stat box waits for A with no printer active), "…'s data was\nadded to the Pokédex." and its Pokédex page (also A with no printer), then "Give a nickname to the\ncaptured Zubat?" (Yes/No, printer inactive). Yes → naming callback2 0x0809FB71. The party count only rises after the nickname step.
 
+### Battle party screen (switch_to)
+
+| Name | Address | Status | Evidence |
+|---|---|---|---|
+| battle party-screen callback2 | 0x0811EBA1 | verified | forced and chosen switch screens; 0x0811EBD1 for ~6 frames while it opens, 0x080777E9 for ~8 frames while it closes |
+| `gPartyMenu` | 0x0203B0A0 | verified | +9 cursor slot (menu row), (+8 >> 4) & 3 == 1 double layout (`battle.party_cursor_to`) |
+| `gBattlePartyCurrentOrder` | 0x0203B0DC (`gPartyMenu` + 0x3C) | verified | 3 bytes, one nibble per menu row, high nibble first: row i shows field slot nibble(i). `01 23 45` at the start of a wild battle; `10 23 45` after switching Ion (field 0) out for Makuhita (field 1). On a forced-switch screen it read `15 42 03` with the menu-order party Ice, Pearl, Dusl, cob, Owl, Chomp; mapped back that is Owl, Ice, cob, Chomp, Dusl, Pearl, exactly the field order read later in the overworld |
+| `gBattlerPartyIndexes` | 0x02023BCE | verified | u16 per battler, a **field** slot: battler 0 read 0 (Ion) → 1 after Makuhita was sent in, while field order stayed Ion, Makuhita |
+
+- **While the battle party screen is open, `gPlayerParty` itself is in battle (menu) order**, Pokémon in battle first, like vanilla's `UpdatePartyToBattleOrder` / `UpdatePartyToFieldOrder`. Traced frame by frame after a switch to Makuhita: slot 0 read Ion until callback2 became 0x0811EBD1, Makuhita from that same frame, and Ion again on the frame it became 0x080777E9. So `get_state`'s party is field order except while that screen (and anything opened from it, e.g. Summary, untested) is up. The order persists across turns: after one switch, field order and menu order differ for the rest of the battle.
+- Messages on this screen ("Makuhita is already in battle!", "Makuhita can't be switched out!") are not in `gStringVar4` or `gDisplayedStringBattle`; screenshot them. The second came from Zubat's Mean Look: `gBattleMons[0]` status2 (+0x50) read 0x04000000 (vanilla `STATUS2_ESCAPE_PREVENTION`).
+
 ## Naming screen
 
 | Name | Address | Status | Evidence |
