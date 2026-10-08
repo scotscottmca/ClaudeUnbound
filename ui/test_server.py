@@ -37,4 +37,18 @@ evs = []
 tr = s.Transcript(type("Hub", (), {"emit": lambda self, e, keep=True: evs.append(e)})(), None, None)
 tr.harness_call({"t": 5, "step": 40, "harness_call": "watcher", "secs": 6.6, "cost_usd": 0.001, "note": "heal Ion"}, 5)
 assert [(e["k"], e["agent"]) for e in evs] == [("spawn", "watcher"), ("return", "watcher")] and evs[1]["text"] == "heal Ion", evs
+
+# Local paths never reach the page: file names only (also through the hub, and in escaped/truncated forms).
+for raw, want in [(r"[Image: source: C:\Users\Parka8111\.claude\projects\D--x\04fd0e42-9…", "[Image: source: 04fd0e42-9…"),
+                  (r"saved C:\\Users\\P~1\\Temp\\x.png ok", "saved x.png ok"),
+                  ("wrote D:/ClaudeUnboundRuns/full1/memory/team.md", "wrote team.md"),
+                  ("cd /d/Repos/ClaudeUnbound/bridge && ls", "cd bridge && ls"),
+                  ("https://unboundwiki.com/locations/crater-town/", None), ("Edit memory/map_notes.md", None),
+                  ("HP 88/88, x 9..18/2", None)]:
+    assert s.scrub(raw) == (want or raw), (raw, s.scrub(raw))
+got = []
+hub = s.Hub("live")
+hub.clients.append(type("Q", (), {"put": lambda self, d: got.append(d)})())
+hub.emit({"k": "tool", "text": r"read D:\ClaudeUnboundRuns\full1\memory\team.md"})
+assert "ClaudeUnboundRuns" not in got[0] and "team.md" in got[0], got
 print("ok")

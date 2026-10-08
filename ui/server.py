@@ -53,7 +53,7 @@ class Hub:
         self.state = {"mode": mode, "graph": {"nodes": [], "edges": []}, "party": None, "counts": {}, "stats": None}
 
     def emit(self, ev, keep=True):
-        data = json.dumps(ev)
+        data = json.dumps(scrub(ev))
         with self.lock:
             if keep:
                 self.ring.append(data)
@@ -61,7 +61,7 @@ class Hub:
                 q.put(data)
 
     def set(self, key, value):
-        self.state[key] = value
+        self.state[key] = value = scrub(value)
         self.emit({"k": key, key: value}, keep=False)
 
     def subscribe(self):
@@ -146,6 +146,22 @@ class Graph:
 
 
 # ---------------------------------------------------------------- transcript -> events
+
+# Local paths never reach the page (user rule): a Windows path (C:\..., backslashes escaped any number of times) or
+# an absolute POSIX path (/d/Repos/...; not a URL's path) keeps only its file name.
+PATH = re.compile(r"\b[A-Za-z]:(?:[\\/]+[^\s\"'<>|*?\\/]+)*[\\/]+|(?<![\w.:/~-])(?:/[^\s\"'<>|*?/]+)+/")
+
+
+def scrub(v):
+    """V with every local directory path cut down to the file name (strings, lists and dicts, recursively)."""
+    if isinstance(v, str):
+        return PATH.sub("", v)
+    if isinstance(v, list):
+        return [scrub(x) for x in v]
+    if isinstance(v, dict):
+        return {k: scrub(x) for k, x in v.items()}
+    return v
+
 
 def clip(s, n=90):
     s = " ".join(str(s).split())
