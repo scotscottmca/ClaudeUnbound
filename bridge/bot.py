@@ -771,7 +771,7 @@ def go(p, target, reroute=True):
                 crossed = None
                 continue
             crossed = None
-        where = (s["map"]["name"], tuple(s["pos"]), s["mode"], s.get("dialog"))
+        where = (here, tuple(s["pos"]), s["mode"], s.get("dialog"))  # by map id: floors share a name
         still = still + 1 if where == last else 0
         last = where
         if still >= 8:
@@ -795,6 +795,16 @@ def go(p, target, reroute=True):
             print(f"{step}: battle -> leaving")
             battle(p)  # keep the plan: a battle doesn't change the map, and re-planning with
             continue    # post-battle HP flipped the grass cost and sent the bot back the way it came
+        if r["mode"] == "other" and r["cb2"] == hex(CB2_OVERWORLD):
+            # A warp's fade locks the field like a script does (Frost Mountain 50/1 (25,24) -> 50/0 was reported as
+            # "a script started"): give it a second and see whether we arrived somewhere.
+            for _ in range(8):
+                p.step(8)
+                if raw(p)["mode"] != "other":
+                    break
+            moved = get_state(p)
+            if (moved["map"]["group"], moved["map"]["num"]) != here or raw(p)["mode"] == "overworld":
+                continue
         if r["mode"] == "dialog" or (r["mode"] == "other" and r["cb2"] == hex(CB2_OVERWORLD)):
             if not reroute:  # the agent's tools: a script took over (story gate, NPC, event); its call
                 raise SystemExit(f"stopped: a script or dialog started at {s['map']['name']} {s['pos']} "

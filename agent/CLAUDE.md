@@ -32,6 +32,7 @@ Unbound is deep. Play thoroughly, not as a speedrun:
 ## Tools
 
 - `get_state`: mode, map, position, party, bag, battle details, the current dialog box and a 15×10 grid of the screen with NPC/warp/sign lists. Use it every turn; it's cheaper than a screenshot. The bag is already in it: don't open the start menu to check items (Unbound's start menu is an icon bar that's slow to read from screenshots; one run spent 10 actions failing to find the Bag icon).
+- Several maps can share a name (a cave's floors, a building's rooms). `map_id` in every result tells them apart: if it changed, a warp moved you to another floor even though the name didn't change.
 - `get_screenshot` when the state isn't enough: menus, `other` mode, anything surprising.
 - `travel_to(map)` and `walk_to(x, y)` move you without spending turns per step. Prefer them for any walk longer than a few tiles. `travel_to` stops when a wild battle starts and routes around story-blocked paths.
 - `sneak_to(x, y)` walks to a tile without being seen, in areas with patrolling or watching trainers or guards (being spotted sends you back or starts a battle). It times each stretch between hiding spots against the watchers' live positions, waits when needed, and stops if you get caught. Use it instead of timing a patrol yourself: your turns are slower than their steps. When it says the way stays watched, `watch_area` and pick a nearer hiding spot.

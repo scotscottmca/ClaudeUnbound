@@ -187,7 +187,9 @@ def sync_instructions():
 
 
 def summary(s):
-    return {"mode": s["mode"], "map": s["map"]["name"], "pos": s["pos"], "badges": s["badges"],
+    # map_id tells apart maps that share a name (a cave's floors: Frost Mountain is 50/0 and 50/1)
+    return {"mode": s["mode"], "map": s["map"]["name"], "map_id": [s["map"]["group"], s["map"]["num"]], "pos": s["pos"],
+            "badges": s["badges"],
             "party": [f"{m['name']} {m['hp']}" for m in s["party"]]}
 
 
@@ -298,7 +300,7 @@ def notes(s):
         if arrivals.count(spot) >= 4:  # moving, so the no-change watchdog can't see it
             watchdog_fired += 1
             arrivals.clear()
-            out.append(f"WATCHDOG: you keep coming back to {s['map']['name']} {s['pos']} (4 times in the last 20 "
+            out.append(f"WATCHDOG: you keep coming back to {s['map']['name']} (map {s['map']['group']}/{s['map']['num']}) {s['pos']} (4 times in the last 20 "
                        "moves): you're going in circles. Stop. Re-read memory/map_notes.md and objectives.md for "
                        "this place, take a screenshot, and pick a genuinely different route or goal."
                        + (" ESCALATE to the expert subagent: the watchdog has fired repeatedly."
