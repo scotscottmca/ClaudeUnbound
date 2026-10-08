@@ -218,4 +218,7 @@ def main():
 
 
 if __name__ == "__main__":
+    # Redirected to a file, stdout is cp1252 on Windows: an agent message with "→" killed the runner (#147).
+    sys.stdout.reconfigure(encoding="utf-8", errors="replace")
+    sys.stderr.reconfigure(encoding="utf-8", errors="replace")
     main()
