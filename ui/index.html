@@ -46,20 +46,26 @@ h2 .note { text-transform: none; letter-spacing: 0; font-weight: 400; color: var
 /* router */
 #rbody { flex: 1; min-height: 0; display: flex; flex-direction: column; }
 #router svg { display: block; width: 100%; flex: 1 1 0; min-height: 150px; }
-#rside { flex: 0 0 auto; max-height: 104px; overflow: hidden; }
+#rside { flex: 0 0 auto; max-height: 150px; overflow: hidden; }
 .node rect { fill: #1b232d; stroke: var(--line); stroke-width: 1.5; transition: stroke .2s, fill .2s; }
 .node text { fill: var(--text); font-size: 14px; font-weight: 600; } .node .sub { fill: var(--dim); font-size: 11px; font-weight: 400; }
 .node.hot rect { fill: #232c39; }
 .edge { fill: none; stroke: #2a3441; stroke-width: 2; transition: stroke .3s; }
 .edge.active { stroke-dasharray: 5 4; animation: dash 1s linear infinite; }
 @keyframes dash { to { stroke-dashoffset: -18; } }
-.elabel { font: 10px var(--mono); fill: var(--warn); transition: opacity 1s; }
+/* "now routing" pill: what is being asked, of whom, and the answer when it comes back */
+#now { margin: 0 12px 6px; padding: 7px 12px; border: 1px solid var(--line); border-radius: 999px; background: #151c25;
+  display: flex; align-items: center; gap: 8px; min-height: 34px; font-size: 12.5px; transition: border-color .3s, opacity .4s; }
+#now.idle { opacity: .55; } #now .tg { font: 600 10.5px var(--mono); color: var(--warn); border: 1px solid #5b4a1e; border-radius: 999px; padding: 1px 7px; white-space: nowrap; }
+#now .who { font-weight: 600; white-space: nowrap; } #now .q { color: var(--text); flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+#now .tm { font: 11px var(--mono); color: var(--dim); white-space: nowrap; } #now .a { color: var(--good); }
 #counts { display: flex; gap: 14px; padding: 2px 12px 4px; font: 12px var(--mono); color: var(--dim); flex-wrap: wrap; }
 #counts span b { font-weight: 600; }
-#trail { font: 12px/1.5 var(--mono); padding: 0 12px 8px; overflow: hidden; }
-#trail div { margin-bottom: 4px; white-space: normal !important; display: -webkit-box; -webkit-line-clamp: 1; -webkit-box-orient: vertical; margin-bottom: 1px; }
-#trail div { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; color: var(--dim); }
-#trail .trig { color: var(--warn); } #trail .back { color: var(--good); }
+#trail { padding: 0 12px 8px; overflow: hidden; display: flex; flex-direction: column; gap: 4px; }
+#trail .card { border-left: 3px solid var(--line); padding: 2px 8px; font-size: 12px; line-height: 1.4; color: var(--dim); }
+#trail .card .h { font: 11px var(--mono); } #trail .trig { color: var(--warn); } #trail .back { color: var(--good); }
+#trail .card .q, #trail .card .a { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+#trail .card .q { color: var(--text); }
 
 /* party */
 #hdr2 { display: flex; gap: 14px; padding: 0 12px 6px; color: var(--dim); font-size: 12px; flex-wrap: wrap; }
@@ -151,6 +157,7 @@ h2 .note { text-transform: none; letter-spacing: 0; font-weight: 400; color: var
   <div class="row bottom">
     <section id="router">
       <h2>Model router</h2>
+      <div id="now" class="idle"><span class="q">waiting for the next handoff</span></div>
       <div id="rbody">
         <svg viewBox="0 0 420 290" preserveAspectRatio="xMidYMid meet">
           <g id="edges"></g><g id="nodes"></g><g id="pulses"></g>
@@ -207,7 +214,6 @@ for (const [k, a] of Object.entries(AG)) {
   const sub = svgEl("text", {x: a.x + 10, y: a.y + 33, class: "sub", id: "s-" + k}, g); sub.textContent = a.sub;
   if (k !== "main") {
     svgEl("path", {d: edgePath(k), class: "edge", id: "e-" + k}, $("edges"));
-    svgEl("text", {x: a.x - 84, y: a.y + H / 2 - 5, class: "elabel", id: "l-" + k, opacity: 0}, $("edges"));
   }
 }
 function hot(k, color) {
@@ -231,25 +237,43 @@ function pulse(agent, back) {
 function settle(agent, after = 0) {
   setTimeout(() => { const e = $("e-" + agent); e.classList.remove("active"); e.style.stroke = ""; }, after);
 }
-const trailRows = {};
+const trailRows = {}, inflight = {};
+const ROLE = k => `${AG[k] ? AG[k].label : "?"} ${AG[k] ? AG[k].sub : k}`;
+let nowTimer = null;
+function showNow(ev, answer) {
+  const a = AG[ev.agent] ? ev.agent : "strategist", el = $("now");
+  el.classList.remove("idle"); el.style.borderColor = css(AG[a].color);
+  const secs = inflight[ev.id] ? Math.round((Date.now() / 1000 - inflight[ev.id].t0)) : 0;
+  el.innerHTML = `<span class="tg">${esc(ev.trigger)}</span><span class="who" style="color:${css(AG[a].color)}">→ ${esc(ROLE(a))}</span>` +
+    (answer == null ? `<span class="q" title="${esc(ev.q || ev.desc)}">${esc(ev.q || ev.desc)}</span><span class="tm" id="nowtm">${secs}s</span>`
+                    : `<span class="q a" title="${esc(answer)}">← ${esc(answer)}</span>`);
+  clearInterval(nowTimer);
+  if (answer == null) nowTimer = setInterval(() => { const t = $("nowtm"); if (t && inflight[ev.id]) t.textContent = Math.round(Date.now() / 1000 - inflight[ev.id].t0) + "s"; }, 1000);
+  else setTimeout(() => { if (!Object.keys(inflight).length) $("now").classList.add("idle"); }, 8000);
+}
 function onSpawn(ev, quiet) {
   const a = AG[ev.agent] ? ev.agent : "strategist";
   spawnN[a] = (spawnN[a] || 0) + 1;
   $("s-" + a).textContent = `${AG[a].sub} · ×${spawnN[a]}`;
-  const row = div("", `<span class="time">${hhmm(ev.t)}</span><span class="trig">${esc(ev.trigger)}</span> → ${esc(ev.agent)}: ${esc(ev.desc)}`);
-  trailRows[ev.id] = row; $("trail").prepend(row);
-  while ($("trail").childElementCount > 4) $("trail").lastElementChild.remove();
-  add(div("spawn", `<span class="time">${hhmm(ev.t)}</span>⇢ ${esc(ev.agent)} <span style="color:var(--warn)">[${esc(ev.trigger)}]</span> ${esc(ev.desc)}`));
+  const card = div("card", `<div class="h"><span class="time">${hhmm(ev.t)}</span> <span class="trig">${esc(ev.trigger)}</span> → ${esc(ROLE(a))}</div>` +
+    `<div class="q" title="${esc(ev.q || ev.desc)}">Q: ${esc(ev.q || ev.desc)}</div>`);
+  card.style.borderLeftColor = css(AG[a].color);
+  trailRows[ev.id] = card; $("trail").prepend(card);
+  while ($("trail").childElementCount > 3) $("trail").lastElementChild.remove();
+  add(div("spawn", `<span class="time">${hhmm(ev.t)}</span>⇢ ${esc(ev.agent)} <span style="color:var(--warn)">[${esc(ev.trigger)}]</span> ${esc(ev.q || ev.desc)}`));
   if (quiet) return;
+  inflight[ev.id] = {t0: Date.now() / 1000};
   pulse(a, false);
-  const l = $("l-" + a); l.textContent = ev.trigger; l.setAttribute("opacity", 1);
-  clearTimeout(l._t); l._t = setTimeout(() => l.setAttribute("opacity", 0), 6000);
+  showNow(ev);
 }
 function onReturn(ev, quiet) {
-  const row = trailRows[ev.id];
-  if (row) row.innerHTML += ` <span class="back">← ${esc(ev.text)}</span>`;
+  const card = trailRows[ev.id];
+  if (card) card.insertAdjacentHTML("beforeend", `<div class="a back" title="${esc(ev.text)}">A: ${esc(ev.text)}</div>`);
   add(div("spawn", `<span class="time">${hhmm(ev.t)}</span>⇠ ${esc(ev.agent)}: ${esc(ev.text)}`));
-  if (!quiet) pulse(ev.agent, true);
+  if (quiet) return;
+  pulse(ev.agent, true);
+  showNow({...ev, trigger: "answer"}, ev.text);
+  delete inflight[ev.id];
 }
 const MODEL = {haiku: "--main", sonnet: "--sonnet", opus: "--opus", fable: "--fable"};
 function onCounts(c) {

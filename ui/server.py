@@ -26,6 +26,10 @@ sys.path.insert(0, os.path.join(os.path.dirname(HERE), "bridge"))
 from probe import Probe  # noqa: E402
 
 NAMES = json.load(open(os.path.join(os.path.dirname(HERE), "bridge", "names.json"), encoding="utf-8"))
+# What each harness-run check is asked, for the router's "now routing" pill.
+HARNESS_Q = {"watcher": "Anything actionable missed in steps {lo}-{step}? (items, signs, healing, a better route)",
+             "verifier": "Do steps {lo20}-{step} match the real game state and the objectives?",
+             "curator": "Tidy memory/: merge duplicates, archive done items, flag stale beliefs"}
 TRIGGERS = ("VERIFY before answering", "LEARNING CHECK", "ESCALATE", "WATCHDOG", "VERIFY")
 
 
@@ -267,8 +271,10 @@ class Transcript:
         if name in ("Agent", "Task") and not parent:
             agent = inp.get("subagent_type", "general")
             self.spawns[b["id"]] = agent
+            prompt = " ".join(str(inp.get("prompt", "")).split())
             self.hub.emit({"k": "spawn", "t": t, "id": b["id"], "agent": agent,
-                           "trigger": self.trigger or "self", "desc": clip(inp.get("description", ""), 60)})
+                           "trigger": self.trigger or "self", "desc": clip(inp.get("description", ""), 60),
+                           "q": clip(re.split(r"(?<=[.?!])\s", prompt)[0] if prompt else inp.get("description", ""), 160)})
             self.trigger = None
             return
         if not parent:
@@ -295,8 +301,11 @@ class Transcript:
         cost = f" · ${d['cost_usd']:.3f}" if isinstance(d.get("cost_usd"), (int, float)) else ""
         reason = f" · {d['reason']}" if d.get("reason") else ""
         self.spawns[tid] = kind
+        step = d.get("step")
+        q = HARNESS_Q.get(kind, "{kind}").format(kind=kind, step=step, lo=max(0, (step or 0) - 12),
+                                                 lo20=max(0, (step or 0) - 20))
         self.hub.emit({"k": "spawn", "t": t, "id": tid, "agent": kind, "trigger": "harness",
-                       "desc": f"step {d.get('step')}{reason} · {d.get('secs', '?')} s{cost}"})
+                       "desc": f"step {step}{reason} · {d.get('secs', '?')} s{cost}", "q": q})
         self.ret(tid, d.get("note") or (f"failed: {d['error']}" if d.get("error") else "nothing to add"), t)
 
     def ret(self, tid, summary, t):
