@@ -17,6 +17,7 @@ OBJECT_EVENTS = 0x02036E38  # 16 x 0x24, player is localId 0xFF
 PLAYER_PARTY_COUNT = 0x02024029
 PLAYER_PARTY = 0x02024284  # 6 x 100, unencrypted on CFRU
 BATTLE_TYPE_FLAGS = 0x02022B4C
+PARTNER_BATTLE = 0x400000  # battle flag with an NPC partner (Cinder Volcano 0x40000d/0x400005); its team fills party slots 4-6
 BATTLE_MONS = 0x02023BE4  # 4 x 0x58
 SPECIES_TO_DEX = 0x09A41FEA  # ROM u16[species]: national dex number (found by matching 8 known species; docs/addresses.md)
 DEX_OWNED = 0x38D  # SaveBlock1 offset: 0x7D bytes, bit n-1 = national dex n caught (docs/addresses.md)
@@ -170,6 +171,9 @@ def get_state(p):
             "item": NAMES["items"][item] if item else None,
             "moves": moves(struct.unpack("<4H", m[0x2C:0x34]), m[0x34:0x38]),
         })
+    if r["mode"] == "battle" and p.read32(BATTLE_TYPE_FLAGS) & PARTNER_BATTLE:
+        for mon in s["party"][3:]:  # an NPC partner's team fills slots 4-6 for the battle (Cinder Volcano)
+            mon["partner"] = True
 
     if r["mode"] == "battle":  # gBattleTypeFlags stays set after battle, so gate on the callback
         s["battle"] = {"flags": hex(p.read32(BATTLE_TYPE_FLAGS)), "battlers": []}

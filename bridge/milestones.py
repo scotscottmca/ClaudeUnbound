@@ -39,6 +39,8 @@ class Tracker:
             self.badges = s["badges"]
             new.append({"kind": "badge", "badges": s["badges"]})
         for m in s["party"]:
+            if m.get("partner"):  # an NPC partner's Pokemon, only in the party for a battle
+                continue
             if m["species"] not in self.species:
                 self.species.add(m["species"])
                 new.append({"kind": "species", "species": m["species"]})
