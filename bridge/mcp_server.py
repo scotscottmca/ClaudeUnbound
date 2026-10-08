@@ -166,7 +166,10 @@ def notes(s):
         # Leaving a map with doors never entered: the full run walked past 12 buildings (missions, a trade)
         # although get_state lists unvisited exits (docs/bootstrap-report.md). Say so once, on the way out.
         try:
-            skipped = [(x, y) for x, y, dest in W.doors(*last_map) if dest not in tracker.seen_maps and dest != here]
+            ds = W.doors(*last_map)
+            # Walking into one of this map's own buildings is exploring, not leaving (first live fire: Bellin).
+            skipped = [] if here in {d for _, _, d in ds} else \
+                [(x, y) for x, y, dest in ds if dest not in tracker.seen_maps]
         except Exception:  # ROM read for a map header: hints only
             skipped = []
         if skipped:
