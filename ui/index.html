@@ -64,21 +64,22 @@ h2 .note { text-transform: none; letter-spacing: 0; font-weight: 400; color: var
 /* party */
 #hdr2 { display: flex; gap: 14px; padding: 0 12px 6px; color: var(--dim); font-size: 12px; flex-wrap: wrap; }
 #hdr2 b { color: var(--text); font-weight: 500; }
-#mons { flex: 1; min-height: 0; display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); grid-template-rows: repeat(3, minmax(0, 1fr));
+#mons { flex: 1 1 0; min-height: 0; display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); grid-template-rows: repeat(3, minmax(0, 1fr));
   gap: 6px 8px; padding: 0 12px 10px; }
 #foe:empty { display: none; }
 #foe { display: grid; grid-template-columns: auto 1fr 64px; gap: 10px; align-items: center; margin: 0 12px 6px; padding: 4px 10px;
   border: 1px solid #5a2f2f; border-radius: 6px; background: #1d1517; font-size: 13px; }
 #foe .nm { color: var(--bad); font-weight: 600; } #foe .sp { color: var(--dim); }
-#stats { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 2px 14px; padding: 0 12px 6px; font-size: 12px; }
+#stats { flex: 1 1 0; min-height: 0; display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); align-content: space-evenly;
+  gap: 6px 16px; padding: 4px 14px 8px; font-size: 13px; }  /* half the section, party grid the other half */
 #stats div { display: flex; flex-direction: column; min-width: 0; }
-#stats .k { color: var(--dim); font-size: 10px; text-transform: uppercase; letter-spacing: .06em; }
-#stats b { font-weight: 600; font-size: 14px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-#stats .sm { color: var(--dim); font: 11px var(--mono); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+#stats .k { color: var(--dim); font-size: 11px; text-transform: uppercase; letter-spacing: .06em; }
+#stats b { font-weight: 600; font-size: 19px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+#stats .sm { color: var(--dim); font: 12px var(--mono); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .badge { display: inline-block; width: 11px; height: 11px; border-radius: 50%; border: 1.5px solid var(--faint); margin-right: 3px; vertical-align: -1px; }
 .badge.on { background: var(--write); border-color: var(--write); }
 .mon .l1 { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-width: 0; }
-.mon .it { grid-column: 1 / 3; font-size: 12px; color: var(--dim); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.mon .it { font-size: 12px; color: var(--dim); }
 .xp { grid-column: 1 / 3; display: grid; grid-template-columns: 24px 1fr auto; gap: 6px; align-items: center; font: 10px var(--mono); color: var(--faint); }
 .xp .bar { height: 4px; } .xp .bar i { background: var(--main); }
 .mon { display: grid; grid-template-columns: 1fr auto; align-content: space-evenly; gap: 2px 10px; padding: 4px 12px; min-height: 0; overflow: hidden; border: 1px solid var(--line);
@@ -290,9 +291,9 @@ function onParty(s) {
   (s.party || []).forEach((p, i) => {
     const sp = p.species ? `${esc(p.species)}${p.level ? " Lv" + p.level : ""}` : "";
     const xp = p.exp ? `<div class="xp"><span>EXP</span><div class="bar"><i style="width:${(100 * p.exp[0] / p.exp[1]).toFixed(0)}%"></i></div><span>${p.exp[1] - p.exp[0]} to go</span></div>` : "";
-    const it = p.species ? `<div class="it">${p.item ? "holds " + esc(p.item) : "no held item"}</div>` : "<div></div>";
+    const it = p.item ? `<span class="it"> · ${esc(p.item)}</span>` : "";  // on the name line: the 2x3 cards are short
     const st = p.status ? `<span class="st">${esc(p.status)}</span>` : "";
-    html += `<div class="mon${i === lead ? " lead" : ""}"><div class="l1"><span class="nm">${esc(p.name)}</span> <span class="sp">${p.species !== p.name ? sp : (p.level ? "Lv" + p.level : "")}</span>${st}</div><div class="hp">${esc(p.hp)}</div><div style="grid-column:1/3">${hpbar(p.hp)}</div>${xp}${it}</div>`;
+    html += `<div class="mon${i === lead ? " lead" : ""}"><div class="l1"><span class="nm">${esc(p.name)}</span> <span class="sp">${p.species !== p.name ? sp : (p.level ? "Lv" + p.level : "")}</span>${st}${it}</div><div class="hp">${esc(p.hp)}</div><div style="grid-column:1/3">${hpbar(p.hp)}</div>${xp}</div>`;
   });
   $("mons").innerHTML = html || `<div style="color:var(--faint);padding:8px 0">no party data yet</div>`;
 }
@@ -315,7 +316,9 @@ let settled = false;
 net.on("stabilizationIterationsDone", () => {
   net.setOptions({physics: {enabled: false}});
   nodes.update(nodes.getIds().map(id => ({id, fixed: false})));  // unpin the nodes a local settle pinned
-  if (!settled) net.fit();
+  // Refit after every settle: the first one can run on a tiny early graph, and the view then stayed zoomed onto
+  // it while later nodes landed off screen (the map looked empty with 122 nodes).
+  net.fit();
   settled = true;
 });
 addEventListener("resize", () => net.fit());
