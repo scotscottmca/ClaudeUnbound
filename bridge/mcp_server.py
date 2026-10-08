@@ -221,6 +221,13 @@ def t_press_buttons(a):
 def t_advance_dialog(a):
     """A through dialog, collecting every box; stops before answering a question or when stuck."""
     seen, waited = [], 0
+    if raw(p)["mode"] == "battle":  # battle messages: A through them until a menu, a question or the end
+        b, _ = battle.wait_for_menu(p, seen=seen)
+        mode = raw(p)["mode"]
+        if b is None and mode == "battle" and not seen:  # a Yes/No question: its text is already finished
+            seen.append((get_state(p).get("battle") or {}).get("text"))
+        return {"boxes": seen, "now": mode,
+                "battle": "your menu is up" if b is not None else "battle over" if mode != "battle" else "a question is waiting"}
     for _ in range(a.get("max_presses", 30) + 16):
         s = get_state(p)
         if s["mode"] != "dialog":

@@ -26,7 +26,7 @@ def acting(p):
     return None, None
 
 
-def wait_for_menu(p, frames=1500):
+def wait_for_menu(p, frames=1500, seen=None):
     """Wait until a player menu is up, pressing A through plain battle text ("A wild Rattata appeared!"
     waits for a press in Unbound). Stops at a question ("forget a move?"): that's the agent's call.
     Returns (battler, menu) or (None, None) if the battle ended or a question is waiting."""
@@ -38,7 +38,10 @@ def wait_for_menu(p, frames=1500):
         if b is not None:
             return b, f
         if r["printer"][0x1B] and r["printer"][0x1C] == 2:  # text finished, waiting for a press
-            if decode(p.range(DISPLAYED_STRING_BATTLE, 0x100)).rstrip().endswith("?"):
+            text = decode(p.range(DISPLAYED_STRING_BATTLE, 0x100)).strip()
+            if seen is not None and (not seen or seen[-1] != text):
+                seen.append(text)
+            if text.endswith("?"):
                 return None, None
             p.press("A", 4)
         p.step(12)
