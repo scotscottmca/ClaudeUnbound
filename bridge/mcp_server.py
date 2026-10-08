@@ -314,15 +314,14 @@ def t_walk_to(a):
 
 def t_travel_to(a):
     bot.MAX_STEPS = a.get("max_steps", 300)
-    if a.get("on_wild_battle", "stop") == "stop":
-        def stop_on_battle(_p):
-            raise SystemExit("stopped: wild battle started")
-        old, bot.battle = bot.battle, stop_on_battle
-        try:
-            return run_bot(bot.go, p, a["map"], False)
-        finally:
-            bot.battle = old
-    return run_bot(bot.go, p, a["map"], False)
+    # Every wild Pokemon is battled (user rule, 2026-10-08): stop and hand the battle to the agent, never flee.
+    def stop_on_battle(_p):
+        raise SystemExit("stopped: wild battle started. Battle it, and catch it if you have Poke Balls.")
+    old, bot.battle = bot.battle, stop_on_battle
+    try:
+        return run_bot(bot.go, p, a["map"], False)
+    finally:
+        bot.battle = old
 
 
 def t_save_state(a):
@@ -364,6 +363,10 @@ def t_switch_to(a):
 
 
 def t_run_away(a):
+    if len(a.get("reason", "").strip()) < 10:
+        return {"result": "NOT RUN: wild Pokemon are battled and caught. Run only if you may lose the fight: "
+                          "call run_away again with reason explaining why (HP, levels, type matchup)."}
+    log({"step": steps, "run_away_reason": a["reason"][:300]})
     try:
         return {"result": battle.run(p)}
     except SystemExit as e:
@@ -426,9 +429,9 @@ TOOLS = {
                 S({"x": {"type": "integer"}, "y": {"type": "integer"}, "max_steps": {"type": "integer"}},
                   ["x", "y"]), True),
     "travel_to": (t_travel_to, "Travel to the named map (e.g. 'Route 2') across maps via doors and edges. "
-                  "Stops when a wild battle starts unless on_wild_battle='flee'. If the way is blocked (a "
+                  "Stops when a wild battle starts (battle it). If the way is blocked (a "
                   "story gate, an object, a one-way ledge) it stops and says where, so you can decide.",
-                  S({"map": {"type": "string"}, "on_wild_battle": {"type": "string", "enum": ["stop", "flee"]},
+                  S({"map": {"type": "string"},
                      "max_steps": {"type": "integer"}}, ["map"]), True),
     "save_state": (t_save_state, "Save an emulator savestate under a name (for rollback).",
                    S({"name": {"type": "string"}}), False),
@@ -450,7 +453,8 @@ TOOLS = {
     "type_name": (t_type_name, "On a naming screen (nickname, rival): clear the box, type the name (letters "
                   "and spaces) and confirm. Answer the 'Is this name OK?' question that follows yourself.",
                   S({"name": {"type": "string"}}, ["name"]), True),
-    "run_away": (t_run_away, "In a wild battle: choose Run and wait for the result.", S({}), True),
+    "run_away": (t_run_away, "In a wild battle: choose Run. Only if you may lose the fight; give the reason.",
+                 S({"reason": {"type": "string"}}, ["reason"]), True),
     "record_verification": (t_record_verification, "For the verifier subagent only: record your verdict after "
                             "checking the playing agent. Clears the verification gate.",
                             S({"verdict": {"type": "string"}}, ["verdict"]), False),
