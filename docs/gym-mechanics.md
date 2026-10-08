@@ -48,4 +48,4 @@ Read-only reads of the live game on 2026-10-08, plus the run's log. See `docs/ad
 
 - Whether the checkpoint is a flag or a var, and how it is set.
 - Whether a defeated trainer's sight still counts. `sneak_to` counts every trainer object as a watcher, which is conservative.
-- Whether the patrollers' turning points follow vanilla's movement range. The data says no: the template range is 9 from x=18, yet the guard turns at 18 and 9. So the tool learns turning points by watching rather than computing them.
+- Answered: the patrollers' turning points follow vanilla `WalkBackAndForth`. A walker goes from its start out to start ∓ range in the direction it sets off and back (guard 7: 18 → 9), with fixed turns. See docs/addresses.md, Objects. `sneak_to` seeds them from the template and falls back to watching if a read contradicts the seed.
