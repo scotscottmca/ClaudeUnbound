@@ -7,21 +7,33 @@ import sys
 from state import G_MAIN, decode
 
 NAMING_CB2 = 0x0809FB71  # gMain.callback2 while the naming screen is up
-BUF = 0x02004560  # sNamingScreen->textBuffer (0xFF-terminated)
-PAGE = 0x02004B82  # 2 lower, 0 others, 1 upper; SELECT cycles 2 -> 0 -> 1, ~20 frames per switch
-CURSOR_X, CURSOR_Y = 0x0202066A, 0x0202066C  # cursor sprite data[0]/[1]; x 8 is the button column
+# sNamingScreen is heap-allocated, so its fields move: a nickname after a capture wasn't where the rival's
+# and Beldum's screens put it. Follow the pointer.
+NAMING_PTR = 0x0203998C  # sNamingScreen
+BUF, PAGE, CURSOR_SPRITE = 0x1800, 0x1E22, 0x1E23  # textBuffer (0xFF-terminated); page 2 lower, 0 others, 1 upper
+#   (SELECT cycles 2 -> 0 -> 1, ~20 frames a switch); cursorSpriteId
+SPRITES, SPRITE_SIZE = 0x0202063C, 0x44  # gSprites; the cursor's data[0]/[1] at +0x2E/+0x30 are x/y (x 8: buttons)
 ROWS = {2: ["abcdef .", "ghijkl ,", "mnopqrs ", "tuvwxyz "],
         1: ["ABCDEF .", "GHIJKL ,", "MNOPQRS ", "TUVWXYZ "]}
 KEYS = {ch: (page, x, y) for page, rows in ROWS.items() for y, row in enumerate(rows) for x, ch in enumerate(row)}
 
 
+def _base(p):
+    return p.read32(NAMING_PTR)
+
+
 def text(p):
-    return decode(p.range(BUF, 16))
+    return decode(p.range(_base(p) + BUF, 16))
+
+
+def _cursor(p):
+    sprite = SPRITES + SPRITE_SIZE * p.read8(_base(p) + CURSOR_SPRITE)
+    return p.read8(sprite + 0x2E), p.read8(sprite + 0x30)
 
 
 def _cursor_to(p, x, y):
     for _ in range(30):
-        cx, cy = p.read8(CURSOR_X), p.read8(CURSOR_Y)
+        cx, cy = _cursor(p)
         if (cx, cy) == (x, y):
             return
         p.press("RIGHT" if cx < x else "LEFT" if cx > x else "DOWN" if cy < y else "UP", 4)
@@ -31,11 +43,11 @@ def _cursor_to(p, x, y):
 
 def _page_to(p, page):
     for _ in range(4):
-        if p.read8(PAGE) == page:
+        if p.read8(_base(p) + PAGE) == page:
             return
         p.press("SELECT", 4)
         p.step(40)
-    raise RuntimeError(f"naming page stuck at {p.read8(PAGE)} wanting {page}")
+    raise RuntimeError(f"naming page stuck at {p.read8(_base(p) + PAGE)} wanting {page}")
 
 
 def type_name(p, name, confirm=True):

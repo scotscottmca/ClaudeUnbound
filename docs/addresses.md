@@ -44,10 +44,11 @@ Pockets are arrays of u16 item ID + u16 count, no XOR, in EWRAM:
 
 | Name | Address | Status | Evidence |
 |---|---|---|---|
+| `sNamingScreen` (pointer) | 0x0203998C | verified | points at the struct (0x02002D60 on the rival and Beldum screens); the struct is heap-allocated, so after a capture it moved and fixed addresses read garbage. Fields below are offsets from it |
 | naming-screen callback2 | 0x0809FB71 | verified | rival and Beldum nickname screens; changes once OK is confirmed |
-| `sNamingScreen->textBuffer` | 0x02004560 | verified | 0xFF → 0xBB ('A') on typing; `naming.py` read back "Copilot" / "Iron Man" |
-| current page | 0x02004B82 | verified | 2 lower, 0 others, 1 upper; SELECT cycles 2→0→1, ~20 frames per switch |
-| cursor x / y | 0x0202066A / 0x0202066C | verified | `gSprites[0].data[0..1]`; RIGHT RIGHT DOWN LEFT diffed 0→1→2→2→1 / 0→0→0→1→1. x 8 is the button column (page, Back, OK) |
+| `textBuffer` | +0x1800 (was 0x02004560) | verified | 0xFF → 0xBB ('A') on typing; `naming.py` read back "Copilot" / "Iron Man" |
+| `currentPage` (u8) | +0x1E22 (was 0x02004B82) | verified | 2 lower, 0 others, 1 upper; SELECT cycles 2→0→1, ~20 frames per switch |
+| cursor x / y | `gSprites[cursorSpriteId (+0x1E23)].data[0..1]` (0x0202063C + 0x44·id + 0x2E/0x30) | verified | sprite 0 on both screens tested; RIGHT RIGHT DOWN LEFT diffed 0→1→2→2→1 / 0→0→0→1→1. x 8 is the button column (page, Back, OK) |
 
 - Lower/upper pages match FireRed's grid (`abcdef .` / `ghijkl ,` / `mnopqrs ` / `tuvwxyz `), mapped by typing each key and reading the buffer. Typing a capital switches to lower case automatically.
 
