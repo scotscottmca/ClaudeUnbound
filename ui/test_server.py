@@ -29,4 +29,12 @@ st = s.Stats(None)
 st.log({"t": 1, "step": 1, "tool": "throw_ball", "args": {}, "result": "\"threw a Poke Ball; caught Swinub; a question\""})
 st.usage({"t": 2, "cost_usd": 0.5, "models": {"claude-haiku-5-5": {"outputTokens": 10}}})
 assert st.s["catches"] == ["Swinub"] and st.s["actions"] == 1 and st.s["tokens"] == {"claude-haiku-5-5": 10}
+st.usage({"t": 3, "kind": "watcher", "cost_usd": 0.001})  # a harness call: costs, but isn't a chunk
+assert st.s["chunks"] == 1 and abs(st.s["cost"] - 0.501) < 1e-9
+
+# a harness-run call in log.jsonl becomes a router handoff and its return
+evs = []
+tr = s.Transcript(type("Hub", (), {"emit": lambda self, e, keep=True: evs.append(e)})(), None, None)
+tr.harness_call({"t": 5, "step": 40, "harness_call": "watcher", "secs": 6.6, "cost_usd": 0.001, "note": "heal Ion"}, 5)
+assert [(e["k"], e["agent"]) for e in evs] == [("spawn", "watcher"), ("return", "watcher")] and evs[1]["text"] == "heal Ion", evs
 print("ok")

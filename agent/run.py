@@ -22,6 +22,7 @@ import time
 REPO = os.path.normpath(os.path.join(os.path.dirname(os.path.abspath(__file__)), ".."))
 sys.path.insert(0, os.path.join(REPO, "bridge"))
 import launch  # noqa: E402
+import watcher  # noqa: E402
 from probe import Probe  # noqa: E402
 from state import get_state  # noqa: E402
 
@@ -205,6 +206,12 @@ def main():
             time.sleep(wait)
             continue
         first = bool(res.get("rotated"))  # a rotated chunk continues as a fresh session
+        if first:  # between sessions, game idle: tidy memory/ for the fresh session (archives, never deletes)
+            try:
+                e = watcher.curate(a.workspace, "context rotation", json.dumps(entry["milestone"]), direct=True)
+                print(f"  curator: {e.get('note') or e.get('error')} ({e.get('secs')} s, archived {e.get('archived_lines')} lines)")
+            except Exception as ex:  # never stops the run
+                print("  curator failed:", repr(ex))
         if entry["milestone"].get("badges", 0) >= a.goal_badges:  # badges only: "so no GOAL REACHED" once ended a run at 0 badges
             print("goal reached:", entry["milestone"])
             return

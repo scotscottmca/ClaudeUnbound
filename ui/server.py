@@ -289,6 +289,16 @@ class Transcript:
                 more = f" (+{len(added) - 1} more lines)" if len(added) > 1 else ""
                 self.learned(f"{f}: {added[0].strip()}{more}", f, who, t)
 
+    def harness_call(self, d, t):
+        """A harness-run model call (bridge/watcher.py), logged to log.jsonl when it ends: a handoff and its return."""
+        kind, tid = d["harness_call"], f"h-{d.get('t')}-{d['harness_call']}"
+        cost = f" · ${d['cost_usd']:.3f}" if isinstance(d.get("cost_usd"), (int, float)) else ""
+        reason = f" · {d['reason']}" if d.get("reason") else ""
+        self.spawns[tid] = kind
+        self.hub.emit({"k": "spawn", "t": t, "id": tid, "agent": kind, "trigger": "harness",
+                       "desc": f"step {d.get('step')}{reason} · {d.get('secs', '?')} s{cost}"})
+        self.ret(tid, d.get("note") or (f"failed: {d['error']}" if d.get("error") else "nothing to add"), t)
+
     def ret(self, tid, summary, t):
         agent = self.spawns.get(tid)
         if agent:
@@ -339,7 +349,7 @@ class Stats:
 
     def usage(self, d):
         s = self.s
-        s["chunks"] += 1
+        s["chunks"] += 0 if d.get("kind") else 1  # "kind": a harness-run watcher/verifier/curator call, not a chunk
         if d.get("cost_usd") is not None:
             s["cost"] += d["cost_usd"]
             s["costed"] += 1
@@ -478,6 +488,8 @@ def live_loop(hub, ws, graph, tr, learned, live_flag, stats):
         for d in log.lines():
             now = d.get("now") and (d["now"], d["t"]) or now
             stats.log(d)
+            if d.get("harness_call"):
+                tr.harness_call(d, d.get("t") or time.time())
         for d in usage.lines():
             stats.usage(d)
         stats.publish()
@@ -539,6 +551,8 @@ def replay_loop(hub, ws, graph, tr, speed, live_flag, stats):
         else:
             stats.log(d)
             stats.publish()
+            if d.get("harness_call"):
+                tr.harness_call(d, t)
             if d.get("now") and not live_flag[0]:
                 hub.set("party", party_from_now(d["now"], t))
     hub.emit({"k": "text", "t": time.time(), "text": "[replay finished]"})

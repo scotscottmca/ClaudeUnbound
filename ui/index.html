@@ -152,7 +152,7 @@ h2 .note { text-transform: none; letter-spacing: 0; font-weight: 400; color: var
     <section id="router">
       <h2>Model router</h2>
       <div id="rbody">
-        <svg viewBox="0 0 420 200" preserveAspectRatio="xMidYMid meet">
+        <svg viewBox="0 0 420 290" preserveAspectRatio="xMidYMid meet">
           <g id="edges"></g><g id="nodes"></g><g id="pulses"></g>
         </svg>
         <div id="rside"><div id="counts"></div><div id="trail"></div></div>
@@ -185,11 +185,13 @@ function div(cls, html) { const d = document.createElement("div"); d.className =
 
 /* ---------- router */
 const AG = {
-  main: {x: 14, y: 76, label: "Haiku 5.5", sub: "main", color: "--main"},
-  verifier: {x: 270, y: 4, label: "Sonnet 5.5", sub: "verifier", color: "--sonnet"},
-  strategist: {x: 270, y: 54, label: "Opus 5.5", sub: "strategist", color: "--opus"},
-  refiner: {x: 270, y: 104, label: "Opus 5.5", sub: "refiner", color: "--opus"},
-  expert: {x: 270, y: 154, label: "Fable 5.1", sub: "expert", color: "--fable"},
+  main: {x: 14, y: 124, label: "Haiku 5.5", sub: "main", color: "--main"},
+  watcher: {x: 270, y: 4, label: "Haiku 5.5", sub: "watcher", color: "--main"},
+  verifier: {x: 270, y: 52, label: "Sonnet 5.5", sub: "verifier", color: "--sonnet"},
+  curator: {x: 270, y: 100, label: "Sonnet 5.5", sub: "curator", color: "--sonnet"},
+  strategist: {x: 270, y: 148, label: "Opus 5.5", sub: "strategist", color: "--opus"},
+  refiner: {x: 270, y: 196, label: "Opus 5.5", sub: "refiner", color: "--opus"},
+  expert: {x: 270, y: 244, label: "Fable 5.1", sub: "expert", color: "--fable"},
 };
 const W = 136, H = 42, spawnN = {}, edgeTimers = {};
 const NS = "http://www.w3.org/2000/svg";

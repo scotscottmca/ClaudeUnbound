@@ -162,6 +162,55 @@ def notes():
 
 
 @case(emu=False)
+def watcher_drain_dedupe():
+    import watcher
+    s = {"mode": "other", "map": {"group": 1, "num": 1, "name": "X"}, "pos": [0, 0], "party": [{"name": "Ion", "hp": "9/40"}]}
+    M.p = Mem()
+    watcher.RT.seen.clear()
+    M.steps = 100
+    watcher.RT.inbox.append(("watcher", 100, "the sign at (3,4) is unread"))
+    watcher.RT.logs.append({"step": 100, "harness_call": "watcher", "model": "m", "note": "x"})
+    out = M.notes(s)
+    assert "WATCHER (step 100): the sign at (3,4) is unread" in out and not watcher.RT.logs, out
+    watcher.RT.inbox.append(("verifier", 100, "objectives stale"))
+    M.steps = 101
+    assert M.notes(s) == ["VERIFIER (as of step 100): objectives stale"]
+    watcher.RT.inbox.append(("watcher", 100, "the sign at (3,4) is unread"))  # same text within 10 actions
+    M.steps = 105
+    assert M.notes(s) == []
+    assert watcher.hygiene(106, ["WATCHDOG: a", "ITEM: b"]) == watcher.hygiene(107, ["WATCHDOG: a", "ITEM: b"])
+    watcher.RT.inbox.append(("watcher", 100, "the sign at (3,4) is unread"))
+    M.steps = 111  # older than the window: delivered again
+    assert len(M.notes(s)) == 1
+    assert not any(n.startswith("VERIFY (") for n in M.notes(s))  # the routine VERIFY note is gone
+
+
+@case(emu=False)
+def curator_archives_never_deletes():
+    import watcher
+    root = tempfile.mkdtemp(dir=TMP)
+    fake = os.path.join(root, "fake_claude.py")  # "curates" by rewriting a file, dropping a line, archiving nothing
+    open(fake, "w").write("import json, sys\nsys.stdin.read()\nopen('team.md', 'w').write('# Team\\nIon\\n')\n"
+                          "open('todo.md', 'w').write('curator touched it\\n')\n"
+                          "print(json.dumps({'result': 'merged team', 'total_cost_usd': 0.01}))\n")
+    mem = os.path.join(root, "ws", "memory")
+    os.makedirs(mem)
+    open(os.path.join(mem, "team.md"), "w").write("# Team\nIon\n- Batty: Lv12, released? no, boxed\n")
+    open(os.path.join(mem, "todo.md"), "w").write("- [ ] read sign\n")
+    old = watcher.CLAUDE
+    watcher.CLAUDE = fake
+    try:
+        e = watcher.curate(os.path.dirname(mem), "test", direct=True)
+    finally:
+        watcher.CLAUDE = old
+    assert e["archived_lines"] == 1 and e["note"] == "merged team", e
+    assert "- Batty: Lv12, released? no, boxed" in open(os.path.join(mem, "archive.md")).read()
+    assert open(os.path.join(mem, "todo.md")).read() == "- [ ] read sign\n"  # harness-owned: restored
+    assert '"harness_call": "curator"' in open(os.path.join(root, "ws", "log.jsonl")).read()
+    assert '"kind": "curator"' in open(os.path.join(root, "ws", "usage.jsonl")).read()
+
+
+@case(emu=False)
 def press_buttons_string():
     keys, real = [], M.press
     M.press = lambda _p, key, *a: keys.append(key) or {"moved": False, "changed": []}
