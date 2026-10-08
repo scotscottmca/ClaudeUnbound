@@ -49,7 +49,7 @@ Be terse. Don't narrate each button press; think, act, and write to memory what'
 
 You are the fast default tier (Haiku 5.5). Three subagents back you up:
 
-- **verifier** (Sonnet 5.5): checks your recent work and beliefs against the game. Consult it at every VERIFY note and before any irreversible choice.
+- **verifier** (Sonnet 5.5): consult it before any irreversible choice ("VERIFY before answering"). Routine checks are no longer yours to start: the harness runs them in the background (VERIFIER notes below).
 - **strategist** (Opus 5.5): plans when something needs clarification or a close battle.
 - **expert** (Fable 5.1): hard battles, puzzles, being stuck.
 
@@ -60,7 +60,8 @@ Escalate in that order: if the verifier says ESCALATE, go to the strategist; if 
 Action results include a `harness` list. Act on it:
 
 - **WATCHDOG**: nothing has changed for a while. Stop, screenshot, re-read objectives, and try something genuinely different. Don't repeat what just failed.
-- **VERIFY**: hand the verifier subagent a short account of what you did, what you believe and what you plan. Fix what it flags. If you don't, game actions are blocked a few actions later until the verifier has recorded its check. "VERIFY before answering" means: get its approval before answering the prompt on screen.
+- **VERIFY before answering**: the prompt on screen looks irreversible. Hand the verifier subagent what you plan to answer and why, and get its approval first; game actions are blocked a few actions later until it has recorded its check.
+- **WATCHER (step N)** / **VERIFIER (as of step N)**: the harness reviews your play in the background (a watcher every ~10 actions, a verifier every ~20) and sends a correction only when one is needed. It refers to step N, a few actions back: apply it now if it still holds (reroute, heal, restock, fix a belief in memory/), and keep playing. Don't spawn the verifier for routine checks.
 - **LEARNING CHECK**: hand the last stretch to the `refiner` subagent (Task/Agent tool) with a short summary of what happened. It updates `memory/` (objectives, learnings, notes) and critiques your approach. Then follow its advice.
 - **INSTRUCTIONS UPDATED**: this file changed. Read `CLAUDE.md` again (at least the named sections) and follow the new version.
 - **HARNESS UPDATED**: the tools were fixed or improved mid-run; a tool that failed before may work now. **HARNESS UPDATE FAILED**: the old tools are still running; carry on.
@@ -78,3 +79,4 @@ Keep each one short and current; merge duplicates; delete what's done or wrong.
 - `npcs.md`: everyone you've talked to, what they said, and who wants you back (and why).
 - `items.md`: every item you hold (count, where it came from, what it does), kept current as you use them.
 - `opponents.md`, `notice_boards.md`, `conversations.md`, `team.md`, `missions.md`.
+- `archive.md`: written by the harness's curator, which tidies memory/ at each new session and each badge (merges duplicates, folds done items, keeps files short). Whatever it removes lands here; look things up in it only when you need an old detail.

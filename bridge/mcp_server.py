@@ -34,6 +34,7 @@ import milestones
 import moves
 import naming
 import state as state_mod
+import watcher
 import wiki
 import world as W
 from probe import Probe
@@ -43,7 +44,6 @@ HERE = os.path.dirname(os.path.abspath(__file__))
 RUN = os.path.normpath(os.path.join(HERE, "..", "run"))
 STATES = os.path.join(RUN, "states")
 LOG = os.environ.get("UNBOUND_LOG") or os.path.join(RUN, "log.jsonl")
-VERIFY_EVERY = 20  # actions between Sonnet verification checks
 VERIFY_GRACE = 3  # actions allowed after a VERIFY note before game actions are blocked
 verify_due = 0  # action number when verification became due (0: none pending)
 last_prompt = None  # irreversible prompt already flagged
@@ -304,12 +304,7 @@ def notes(s):
                        + (" ESCALATE to the expert subagent: the watchdog has fired repeatedly."
                           if watchdog_fired >= 2 else ""))
     global verify_due
-    if steps and steps % VERIFY_EVERY == 0 and steps % LEARN_EVERY:
-        # Routine checks no longer block play (user, 2026-10-08): spawn the verifier in the background and apply
-        # its correction when it arrives. Only irreversible prompts below still gate actions.
-        out.append(f"VERIFY (action {steps}): spawn the verifier subagent in the background with what you did, believe "
-                   "and plan next, and KEEP PLAYING. When its verdict arrives, apply any correction (reroute, fix a "
-                   "belief); it refers to this step.")
+    # Routine verification is harness-run now (watcher.py, user 2026-10-08); only irreversible prompts gate actions.
     # Battle prompts too: "Delete a move?" when learning a fifth move happens inside battle.
     text = (s.get("dialog") or (s.get("battle") or {}).get("text") or "").lower()
     global last_prompt
@@ -355,6 +350,10 @@ def notes(s):
     # One escalation per battle: switching Pokemon opens the party screen (not the battle callback),
     # which used to reset this and re-fire the note several times in one fight.
     battle_seen = True if in_battle else (False if s["mode"] == "overworld" else battle_seen)
+    try:  # background watcher/verifier results, then drop notes repeated within ~10 actions
+        out = watcher.hygiene(steps, out + watcher.drain(log))
+    except Exception as e:  # hints only
+        log({"step": steps, "error": f"watcher drain: {e!r}"})
     return out
 
 
@@ -729,6 +728,10 @@ def call(name, args):
         brief = result.get("result", result) if isinstance(result, dict) else result
         log({"step": steps, "tool": name, "args": args, "result": json.dumps(brief, ensure_ascii=False)[:300],
              "now": summary(s), "harness": msgs})
+        try:
+            watcher.tick(steps, s, LOG)  # every ~10/20 actions: background watcher/verifier; curator on a badge
+        except Exception as e:
+            log({"step": steps, "error": f"watcher tick: {e!r}"})
     else:
         log({"step": steps, "tool": name, "args": args})
     return content
