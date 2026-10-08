@@ -230,7 +230,7 @@ def press(p, key, frames=4, settle=16):
     after = _snapshot(p)
     return {"key": key, "before": before, "after": after,
             "moved": (before["map"], before["pos"]) != (after["map"], after["pos"]),
-            "changed": [k for k in before if before[k] != after[k]]}
+            "changed": [k for k in before.keys() | after.keys() if before.get(k) != after.get(k)]}
 
 
 if __name__ == "__main__":
