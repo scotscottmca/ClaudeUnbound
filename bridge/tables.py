@@ -26,11 +26,20 @@ MAPSEC_FIRST, MAPSEC_COUNT = 0x58, 109
 MAPSEC_EXPECT = {0x59: "Bellin Town", 0x65: "Route 1", 0x85: "Shadow Base"}
 
 
+def _name(rom, o, width):
+    """A table entry's name. Unbound's long item names (33 of them: "Safety Goggles", "Twisted Spoon", the agent's
+    unreadable key item) store a ROM pointer to the full name in the first 4 bytes instead (#161)."""
+    ptr = struct.unpack("<I", rom[o:o + 4])[0]
+    if rom[o + 3] in (0x08, 0x09) and ROM_BASE <= ptr < ROM_BASE + len(rom):
+        return decode(rom[ptr - ROM_BASE:ptr - ROM_BASE + 40])
+    return decode(rom[o:o + width])
+
+
 def build(rom):
     out = {}
     for name, (addr, size, width, count, expect) in TABLES.items():
         o = addr - ROM_BASE
-        out[name] = [decode(rom[o + i * size: o + i * size + width]) for i in range(count)]
+        out[name] = [_name(rom, o + i * size, width) for i in range(count)]
         for i, want in expect.items():
             if out[name][i] != want:
                 sys.exit(f"{name}[{i}] is {out[name][i]!r}, expected {want!r}: wrong ROM or table moved")
