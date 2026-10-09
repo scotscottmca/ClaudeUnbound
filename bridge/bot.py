@@ -998,7 +998,9 @@ def describe_levels(w, target=None, limit=12):
         lv = sorted({w["tile"](*t)[2] for t in r})
         edge = sorted({(n["id"], n["x"], n["y"]) for n in w["npcs"] for t in r
                        if abs(n["x"] - t[0]) + abs(n["y"] - t[1]) == 1})
-        ws = [f"({x},{y})->{warps[(x, y)]['to']}" for (x, y) in sorted(warps) if (x, y) in r]
+        ws = [f"({x},{y})->{warps[(x, y)]['to']}" + (" (arrival only: stepping on it does nothing)"
+                                                     if w["tile"](x, y)[0] == W.ARRIVAL_ONLY else "")
+              for (x, y) in sorted(warps) if (x, y) in r]
         return (f"Region {name(i)}{' (YOU)' if i == me else ''}: level {'/'.join(map(str, lv))}, {len(r)} tiles, x {min(xs)}..{max(xs)} "
                 f"y {min(ys)}..{max(ys)}" + (f"; warps {', '.join(ws)}" if ws else "")
                 + (f"; objects at its edge (talk/ride?): {', '.join(f'id {a} ({b},{c})' for a, b, c in edge)}" if edge else "")
