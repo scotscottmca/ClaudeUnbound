@@ -610,6 +610,11 @@ def t_use_on(a):
     return _menu_tool(items.use_on, a["item"], a["pokemon"])
 
 
+def t_teach_tm(a):
+    import tm
+    return _menu_tool(tm.teach_tm, a["tm"], a["pokemon"], a.get("forget"))
+
+
 def t_team_details(a):
     import stats
     n = p.read8(state_mod.PLAYER_PARTY_COUNT)
@@ -863,6 +868,13 @@ TOOLS = {
                "full) and verifies the effect. An evolution or a 'learn a new move?' question is left to you. "
                "(Healing items: use_item.)",
                S({"item": {"type": "string"}, "pokemon": {"type": "string", "description": "nickname"}}, ["item", "pokemon"]), True),
+    "teach_tm": (t_teach_tm, "Overworld: teach a TM from the TM Case (e.g. 'TM40', or the move's name) to a party member, in "
+                 "one call. If it already knows four moves, FORGET names the one to replace (it refuses without it and "
+                 "lists the moves). TMs aren't used up. HMs needn't be taught (any Pokemon that could learn one can use "
+                 "it). Verifies the new moveset.",
+                 S({"tm": {"type": "string"}, "pokemon": {"type": "string", "description": "nickname"},
+                    "forget": {"type": "string", "description": "the move to replace, if it knows four"}},
+                   ["tm", "pokemon"]), True),
     "buy": (t_buy, "In a Poke Mart: buy QUANTITY (1-99) of ITEM in one call. Walks to the clerk, checks the item is "
             "stocked (lists what is if not) and that you can afford it, confirms, and reports the new count and money.",
             S({"item": {"type": "string"}, "quantity": {"type": "integer"}}, ["item"]), True),
