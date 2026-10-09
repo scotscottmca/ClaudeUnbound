@@ -65,8 +65,9 @@ def setup(ws, fresh, bootstrap, goal_badges, reloaded=False, difficulty="vanilla
         shutil.copytree(os.path.join(bootstrap, "memory"), os.path.join(ws, "memory"), dirs_exist_ok=True,
                         ignore=lambda _d, names: [n for n in names if n in RUN_STATE])
     seed = {"objectives.md": f"# Objectives\n\n- Goal: earn {goal_text(goal_badges)}.\n"
-                             + (f"- Difficulty: {difficulty.upper()}. At the new-game difficulty prompt choose {difficulty.title()} "
-                                "(VERIFY before answering: it can't be raised later).\n" if difficulty != "vanilla" else "")
+                             + (f"- Difficulty: {difficulty.upper()} (already set in Game Settings by the operator: Shift battle "
+                                "style, 4 items per trainer battle, capped Exp. Share). Level caps apply: see team_details.\n"
+                                if difficulty != "vanilla" else "")
                              + "- Next: find out where I am and what the current mission says.\n",
             "learnings.md": "# Learnings\n\n"}
     for name, text in seed.items():

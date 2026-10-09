@@ -128,8 +128,10 @@ DIFFICULTY = os.environ.get("UNBOUND_DIFFICULTY", "vanilla")  # the run's diffic
 def level_cap(badges):
     """The Capped Exp. Share level cap for BADGES at this run's difficulty. ponytail: the 'after Tarmigan Mansion'
     step (between 4 and 5 badges: 43 Vanilla, 45 Difficult+) needs a story flag; until found, 4 badges -> 4-badge cap."""
-    if DIFFICULTY not in ("expert", "insane"):  # Capped Exp. Share is the default only there (off in this Vanilla
-        return None                            # run: the team is at 37-43 with 3 badges, over Vanilla's 33)
+    # Capped Exp. Share is on in the non-Vanilla runs (default on Expert/Insane; set by hand for the Difficult run,
+    # #162) and off in the Vanilla full run (its team was 37-43 with 3 badges, over Vanilla's 33).
+    if DIFFICULTY not in ("difficult", "expert", "insane"):
+        return None
     return CAPS["expert"][min(badges, 8)]
 
 

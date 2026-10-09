@@ -54,9 +54,15 @@ and "Level Caps"):
 ## Expert work: to do
 1. **#162:** start the Expert run (the checklist is in the issue):
    ```
-   python bridge/launch.py --detach runner --min cmd /c "python -u agent\run.py --workspace D:\ClaudeUnboundRuns\expert1 --fresh --bootstrap-from D:\ClaudeUnboundRuns\full1 --difficulty expert --goal-badges 8 >> D:\ClaudeUnboundRuns\expert1.console.log 2>&1"
+   python bridge/launch.py --detach runner --min cmd /c "python -u agent\run.py --workspace D:\ClaudeUnboundRuns\expert1 --fresh --bootstrap-from D:\ClaudeUnboundRuns\full1 --difficulty difficult --baseline D:\Repos\ClaudeUnbound\run\baseline_expert.ss1 --goal-badges 8 --budget-usd 150 >> D:\ClaudeUnboundRuns\expert1.console.log 2>&1"
    ```
-   `--fresh` stops the current mGBA and starts a new game; full1's save and workspace are kept. Then start the
+   `--fresh` stops the current mGBA and loads `run/baseline_expert.ss1`: the game's start (Shadow Base cell, 0
+   badges), made by the human on 2026-10-09 from the Vanilla baseline with Game Settings changed. The difficulty was
+   set to **Difficult**, since Unbound won't raise it to Expert after the start. The other settings are Battle Style
+   Shift, Item Restrictions 4 Items Only, and Exp. Gain Capped Exp. Share. So the harness runs with
+   `--difficulty difficult`: Difficult+ level caps (the same as Expert's), and no "trainers have full EVs" assumption
+   (that is Expert-only). full1's save and workspace are kept. `run/baseline.ss1` remains the Vanilla start; the
+   runner refuses a non-Vanilla `--fresh` without `--baseline`. Then start the
    spectator for `expert1` and arm `ops/watch_run.py D:\ClaudeUnboundRuns\expert1`.
 
 - **#166:**
