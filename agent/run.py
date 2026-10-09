@@ -58,7 +58,7 @@ def difficulty_of(ws, wanted=None):
     return cfg.get("difficulty", "vanilla")
 
 
-def setup(ws, fresh, bootstrap, goal_badges, reloaded=False, difficulty="vanilla"):
+def setup(ws, fresh, bootstrap, goal_badges, reloaded=False, difficulty="vanilla", baseline=None):
     os.makedirs(os.path.join(ws, "memory"), exist_ok=True)
     shutil.copy(os.path.join(REPO, "agent", "CLAUDE.md"), os.path.join(ws, "CLAUDE.md"))
     if bootstrap and fresh:  # on a resume, memory/ is already this run's
@@ -85,7 +85,9 @@ def setup(ws, fresh, bootstrap, goal_badges, reloaded=False, difficulty="vanilla
         sav = os.path.join(REPO, "run", "Unbound.sav")
         if os.path.exists(sav):
             os.replace(sav, sav + f".{int(time.time())}.bak")
-        launch.launch(os.path.join(REPO, "run", "baseline.ss1"))
+        # baseline.ss1 starts past the intro on Vanilla (the difficulty is chosen in the intro): an Expert run needs
+        # its own start state, made by the human (run/baseline_expert.ss1, #162).
+        launch.launch(baseline or os.path.join(REPO, "run", "baseline.ss1"))
     elif not reloaded and not launch.mgba_running():  # reloaded: the runner re-exec'd itself, attach as is
         # The emulator went down: resume from the newest autosave, not the last in-game save
         # (losing 40 minutes of play to a closed emulator is how this was learned). A running one, even
@@ -228,6 +230,8 @@ def main():
     ap.add_argument("--idle-chunks", type=int, default=3,
                     help="stop when this many chunks in a row take no game action (the agent stopped playing)")
     ap.add_argument("--goal-badges", type=int, default=1)
+    ap.add_argument("--baseline", help="start state for --fresh (default run/baseline.ss1, a Vanilla start; Expert: "
+                    "run/baseline_expert.ss1)")
     ap.add_argument("--difficulty", choices=["vanilla", "difficult", "expert", "insane"],
                     help="the run's difficulty (remembered in the workspace's run.json; default: what it says, else vanilla)")
     ap.add_argument("--max-chunks", type=int, default=1000)
@@ -236,7 +240,9 @@ def main():
     if a.fresh and os.path.exists(os.path.join(a.workspace, "transcripts")):
         sys.exit(f"{a.workspace} already has a run; pick a new --workspace for a fresh run")
     difficulty = difficulty_of(a.workspace, a.difficulty)
-    setup(a.workspace, a.fresh, a.bootstrap_from, a.goal_badges, a.reloaded, difficulty)
+    if a.fresh and difficulty != "vanilla" and not a.baseline:
+        sys.exit(f"--difficulty {difficulty} needs --baseline: run/baseline.ss1 is past the intro on Vanilla")
+    setup(a.workspace, a.fresh, a.bootstrap_from, a.goal_badges, a.reloaded, difficulty, a.baseline)
     usage_log = os.path.join(a.workspace, "usage.jsonl")
     spent = spent_so_far(usage_log)
     budget_end = spent + a.budget_usd  # per launch: a resumed run's history doesn't count against it
