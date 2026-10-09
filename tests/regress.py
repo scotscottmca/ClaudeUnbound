@@ -597,6 +597,23 @@ def runner_cost_tally():
 
 
 @case(emu=False)
+def map_levels():
+    # A level-4 bridge (row 1) over a level-3 pad path (column 2, crossing under it on a level-15 tile): two regions,
+    # and the pads' region says it isn't enterable on foot from the bridge.
+    def tile(x, y):
+        if y == 1:
+            return (0, 0, 15 if x == 2 else 4)
+        if x == 2 and y in (0, 2, 3):
+            return (0, 0, 3)
+        return (0x11, 1, 1)  # water
+    w = {"width": 5, "height": 4, "player": [0, 1], "elevation": 4, "npcs": [], "warps": [], "tile": tile}
+    rid, regs, links = bot.regions(w)
+    assert rid[(0, 1)] == rid[(4, 1)] != rid[(2, 2)] and rid[(2, 0)] == rid[(2, 3)], rid
+    text = bot.describe_levels(w, (2, 3))
+    assert "No walking route" in text and "NOT enterable on foot" in text, text
+
+
+@case(emu=False)
 def planner_no_move():
     # A move the game refused (walk_to learns it per map) is planned around, not retried.
     w = {"width": 3, "height": 2, "player": [0, 0], "elevation": 3, "npcs": [], "tile": lambda x, y: (0, 0, 3)}

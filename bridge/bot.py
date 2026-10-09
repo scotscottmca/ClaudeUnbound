@@ -951,3 +951,75 @@ def watch(p, frames=480, every=4, radius=10):
     print(f"tiles no watcher looked at or stood on while watched, nearest first: {hide[:30]}")
     print("A tile next to a patrol path but off its line of sight is a hiding spot; a watcher only sees straight "
           "ahead, so walking behind one as it walks away is unseen too. Time crossings from the repeat period.")
+
+
+def regions(w):
+    """Split the map into regions: sets of tiles you can walk between both ways (ledges, hop gaps, ice and the
+    level rules included; NPCs ignored). Returns (region of each tile, regions as tile sets, one-way links
+    {region: regions reachable from it}). Levels matter: a bridge (level 4) over lily pads (level 3) is two regions
+    even where they overlap on screen (Fallshore 14/15)."""
+    tiles = [(x, y) for y in range(w["height"]) for x in range(w["width"])
+             if not w["tile"](x, y)[1] and w["tile"](x, y)[2] not in (0, 15)]
+    reach = {}
+    for t in tiles:
+        seen = set()
+        plan(dict(w, player=list(t), elevation=w["tile"](*t)[2], npcs=[]), set(), set(), visit=seen)
+        reach[t] = seen
+    rid, regs = {}, []
+    for t in tiles:
+        if t in rid:
+            continue
+        r = {u for u in reach[t] if u in reach and t in reach[u]}
+        for u in r:
+            rid[u] = len(regs)
+        regs.append(r)
+    links = {i: {rid[u] for u in reach[next(iter(r))] if u in rid} - {i} for i, r in enumerate(regs)}
+    return rid, regs, links
+
+
+def describe_levels(w, target=None, limit=12):
+    """Plain-language map of the regions for the agent: level, extent, warps inside, objects at the edge (a Lapras
+    or a person may carry you across), one-way links. With TARGET, why it can't be walked to from here."""
+    rid, regs, links = regions(w)
+    here = tuple(w["player"])
+    me = rid.get(here)
+    if me is None:  # standing on a crossing tile (level 0/15): take the region of a neighbour you can reach
+        me = next((rid[u] for u in sorted(rid, key=lambda u: abs(u[0] - here[0]) + abs(u[1] - here[1]))
+                   if abs(u[0] - here[0]) + abs(u[1] - here[1]) <= 1), None)
+    into = {i: {j for j, out in links.items() if i in out} for i in range(len(regs))}
+    warps = {(wp["x"], wp["y"]): wp for wp in w["warps"]}
+    big = sorted((i for i in range(len(regs)) if len(regs[i]) >= 3), key=lambda i: (i != me, -len(regs[i])))
+    letter = {i: chr(65 + k) if k < 26 else f"R{k}" for k, i in enumerate(big)}
+    name = lambda i: letter.get(i) or "tile " + " ".join(f"({x},{y})" for x, y in sorted(regs[i]))  # noqa: E731
+
+    def line(i):
+        r = regs[i]
+        xs, ys = [t[0] for t in r], [t[1] for t in r]
+        lv = sorted({w["tile"](*t)[2] for t in r})
+        edge = sorted({(n["id"], n["x"], n["y"]) for n in w["npcs"] for t in r
+                       if abs(n["x"] - t[0]) + abs(n["y"] - t[1]) == 1})
+        ws = [f"({x},{y})->{warps[(x, y)]['to']}" for (x, y) in sorted(warps) if (x, y) in r]
+        return (f"Region {name(i)}{' (YOU)' if i == me else ''}: level {'/'.join(map(str, lv))}, {len(r)} tiles, x {min(xs)}..{max(xs)} "
+                f"y {min(ys)}..{max(ys)}" + (f"; warps {', '.join(ws)}" if ws else "")
+                + (f"; objects at its edge (talk/ride?): {', '.join(f'id {a} ({b},{c})' for a, b, c in edge)}" if edge else "")
+                + (f"; walk on (one-way) to {', '.join(map(name, sorted(links[i])))}" if links[i] else "")
+                + (f"; entered on foot only from {', '.join(map(name, sorted(into[i])))}" if into[i] else
+                   "; NOT enterable on foot from any other region (a ride, a warp or a script gets you in)"))
+
+    keep = ([me] if me is not None and me not in big else []) + big
+    out = [line(i) for i in keep][:limit]
+    if target is not None:
+        t = tuple(target)
+        tr = rid.get(t)
+        if tr is None:
+            out.insert(0, f"target {t}: not a standing tile (a wall, water, a gap or a crossing)")
+        elif tr == me:
+            out.insert(0, f"target {t} is in your region {name(me)}: walkable (something else blocked the walk)")
+        else:
+            path = tr in links.get(me, set())
+            out.insert(0, f"target {t} is in region {name(tr)} (level {w['tile'](*t)[2]}); you are in region {name(me)}. "
+                          + ("You can walk there one-way." if path else
+                             f"No walking route from {name(me)} to {name(tr)}: see how {name(tr)} is entered below."))
+            if tr not in keep[:limit]:
+                out.append(line(tr))
+    return "\n".join(out)

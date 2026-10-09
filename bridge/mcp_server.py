@@ -535,8 +535,13 @@ def t_walk_to(a):
                 return
             path = bot.plan(w, goal, set())
             if not path:
+                why = ""
+                try:  # which level/region the target is on, and how that region is entered
+                    why = "\n" + "\n".join(bot.describe_levels(w, t).splitlines()[:4])
+                except Exception:
+                    pass
                 raise SystemExit(f"no path from {w['player']} to {t}" + (" or any tile next to it" if interact or wall else "")
-                                 + " (it may be behind a one-way ledge, on another level, or blocked)")
+                                 + " (it may be behind a one-way ledge, on another level, or blocked)" + why)
             if bot.stride(p, path, s.get("facing")) == 0 and raw(p)["mode"] == "overworld":
                 # The game refused a move the planner thought open (an unmodelled tile, an invisible block):
                 # remember it for this map and plan around it, rather than stop and have the same move retried.
@@ -550,6 +555,12 @@ def t_walk_to(a):
                     raise SystemExit(f"blocked going {path[0]} from {w['player']}, and around it {refused} times")
         raise SystemExit("max_steps reached")
     return run_bot(walk)
+
+
+def t_map_levels(a):
+    w = W.read_world(p)
+    target = (a["x"], a["y"]) if "x" in a and "y" in a else None
+    return {"regions": bot.describe_levels(w, target).splitlines()}
 
 
 def t_sneak_to(a):
@@ -750,6 +761,12 @@ TOOLS = {
                 "dialog, or when blocked.",
                 S({"x": {"type": "integer"}, "y": {"type": "integer"}, "max_steps": {"type": "integer"}},
                   ["x", "y"]), True),
+    "map_levels": (t_map_levels, "Explain this map's levels: it splits the map into regions you can walk around in (bridges, "
+                   "walkways and lower paths such as lily pads are separate regions even where they overlap on screen), "
+                   "with each region's level, extent, warps, objects at its edge (a Lapras or a person may carry you across) "
+                   "and the one-way links between them. Give x, y to be told which region a tile is in and how that region is "
+                   "entered. Use it whenever walk_to says 'no path' or you can't see how to get somewhere on the same map.",
+                   S({"x": {"type": "integer"}, "y": {"type": "integer"}}), False),
     "sneak_to": (t_sneak_to, "Walk to tile (x, y) on this map without being seen by watchers (trainers and guards, "
                  "including ones patrolling back and forth). Plans around fixed sight lines; learns each patroller's "
                  "turning points and step timing by watching, then crosses watched ground from one safe tile to the "
