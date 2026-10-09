@@ -202,7 +202,7 @@ def read(url_or_slug):
         raise KeyError(f"{url_or_slug!r} is outside the indexed sections {sorted(ALLOWED_SECTIONS)}")
     f = PAGES / f"{slug(s)}.json"
     if not f.exists():
-        raise KeyError(f"no cached page for {url_or_slug!r}")
+        raise KeyError(f"no cached page for {url_or_slug!r}: don't guess addresses, find the page with wiki_search")
     page = json.loads(f.read_text(encoding="utf-8"))
     return {**page, "text": strip_excluded(page["text"])}
 
