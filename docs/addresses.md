@@ -220,3 +220,27 @@ Party, position, map ID and dialog text read correctly across 10 hand-played sce
 
 - Mode detection: battle if callback2 is `BattleMainCB2` (0x08011101), dialog if printer 0 is active, overworld if callback2 is `CB2_Overworld` and field controls aren't locked, else other (menus, cutscenes).
 - `gStringVar4` keeps the last message after the box closes, so only trust it when printer 0 is active.
+
+## Menus and field tools (2026-10-09, #161 #109 #165 #166)
+
+All verified live on the parked Vanilla game unless marked otherwise; each tool re-reads party/bag/storage to verify its own result.
+
+| What | Address | Status | Evidence / notes |
+|---|---|---|---|
+| sMenu.cursorPos (generic list menus) | 0x0203ADE6 u8 | verified | party actions, PC options, Buy/Sell, Yes/No |
+| sPartyMenuInternal pointer | 0x0203B09C | verified | -> struct; actions u8[8] at +0x0F, count +0x17 (FireRed ids; 18 = CFRU "Move" in the item submenu; field moves 19 Flash, 21 Fly, 24 Rock Smash) |
+| gPartyMenu.slotId2 | 0x0203B0AA (gPartyMenu +0xA) | verified | the Switch target cursor (+9 stays on the first pick) |
+| Field give-bag callback | cb2 0x08107EE1 | verified | bag opened from the party menu's Give |
+| Bag cursor / scroll per pocket | 0x0203AD04 + 2*pocket / 0x0203AD0A + 2*pocket | verified | pocket 1 (Key Items): cursor 3 = TM Case |
+| TM Case | cb2 0x08131865; cursor u16 0x0203B114, scroll 0x0203B116 | verified | contents = TM pocket 0x0203C41C (u16 id + u16 count; HMs first, same order as the list); TMs aren't consumed |
+| Forget-a-move screen | cb2 0x08137EE9; cursor u8 0x0203B16D | verified | rows 0-3 known moves, 4 the new move (= give up); found by a down-down-up diff (counters fooled a simpler one) |
+| PC storage screen | cb2 0x0808CDC5; area u8 0x02039820 (0 grid, 1 party, 2 title); position u8 0x02039821 | verified | grid position = row*6+col |
+| Deposit prompt box | storage data pointer 0x0203982C, +0x2094 u8 | verified | tracks LEFT/RIGHT; does NOT start at the current box |
+| PC tile | metatile behavior 0x83 | verified | (11,3) in every Center checked (14/6, 7/0, 8/0) |
+| Boxes 20-25 | 20-22 at 0x0203CB44 (+30 mons each), 23-24 at 0x02027434, 25 at 0x02024638 | plausible | CFRU source (TOTAL_BOXES_COUNT 25); boxes 1-19 verified at gPokemonStoragePtr+4; 20+ unverified on Unbound (all empty so far) |
+| Mart | list ptr 0x02039938 (u16 ids, 0-terminated); total price u16 0x0203993C; cursor u16 0x02039940; scroll 0x02039942; count 0x02039944 | verified | shop list cb2 0x0809ADE5 |
+| Mart quantity | u16 0x030050C2 | verified | UP/DOWN +-1, RIGHT/LEFT +-10 (0x0203993D was the price's high byte: a coincidence) |
+| Fly map | cb2 0x080C08B5; cursor x u16 0x020081D0, y 0x020081D2; section under cursor u8 0x020081E4 | verified | |
+| Region map section grid | ROM 0x083F2490, 22 x 15 bytes | verified | 29/29 live cursor positions matched |
+| Field obstacle objects | graphics 95 Cut tree, 96 breakable rock, 97 Strength boulder | 95/96 verified, 97 plausible | Route 2: A while facing uses the move (Unbound HM rule) |
+| Item name pointers | items table entry +0: ROM pointer for long names | verified | 33 items (#164) |

@@ -615,6 +615,11 @@ def t_teach_tm(a):
     return _menu_tool(tm.teach_tm, a["tm"], a["pokemon"], a.get("forget"))
 
 
+def t_clear_obstacle(a):
+    import field
+    return _menu_tool(field.clear_obstacle, a.get("x"), a.get("y"))
+
+
 def t_team_details(a):
     import stats
     n = p.read8(state_mod.PLAYER_PARTY_COUNT)
@@ -875,6 +880,11 @@ TOOLS = {
                  S({"tm": {"type": "string"}, "pokemon": {"type": "string", "description": "nickname"},
                     "forget": {"type": "string", "description": "the move to replace, if it knows four"}},
                    ["tm", "pokemon"]), True),
+    "clear_obstacle": (t_clear_obstacle, "Cut a tree or smash a breakable rock (or activate Strength on a boulder) in one "
+                       "call: walks next to it, faces it and presses A (in Unbound that uses the move when you hold the HM "
+                       "and a party Pokemon could learn it). Give x, y, or none for the nearest on screen. A wild Pokemon "
+                       "may jump out of a rock: then you're in a battle.",
+                       S({"x": {"type": "integer"}, "y": {"type": "integer"}}), True),
     "buy": (t_buy, "In a Poke Mart: buy QUANTITY (1-99) of ITEM in one call. Walks to the clerk, checks the item is "
             "stocked (lists what is if not) and that you can afford it, confirms, and reports the new count and money.",
             S({"item": {"type": "string"}, "quantity": {"type": "integer"}}, ["item"]), True),

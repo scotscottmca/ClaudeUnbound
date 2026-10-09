@@ -27,9 +27,21 @@ Unbound is deep. Play thoroughly, not as a speedrun:
   pick that Pokemon: the move (Cut, Fly, Rock Smash, Strength, Surf...) is listed, but only where it can be used (Fly
   outdoors; Cut facing a tree; Rock Smash facing a rock). Don't teach HMs: that costs a move slot.
 - **Fly** with `fly(destination)` to any town or city you have visited (from outdoors). Use it for every long trip back.
-- **Field obstacles.** Note cuttable trees, breakable rocks and boulders in `memory/map_notes.md`. Once you hold the HM
-  (check the TM Case) and have a Pokemon that could learn the move, clear them: face the obstacle, open the party menu
-  on that Pokemon, choose the move.
+- **Field obstacles.** Cut trees, breakable rocks and boulders: once you hold the HM (check the TM Case) and a party
+  Pokemon could learn the move, `clear_obstacle(x, y)` clears it. (In Unbound, facing it and pressing A uses the move;
+  no menu.) A wild Pokemon may jump out of a rock. Without the HM yet, note it in `memory/map_notes.md`.
+- **Expert facts:**
+  - **Level caps.** Rare Candy does nothing at the cap. Besides gyms, beating Successor Maxima at Tarmigan Mansion
+    (Tarmigan Town, on the way to Dehara City, after badge 4) raises the cap.
+  - **Items in battle.** At most 4 item uses per trainer battle, and in wild battles where the Pokemon can't be
+    caught. Plan heals before the fight.
+  - **Shift.** After you knock out a trainer's Pokemon the game asks whether you want to switch: a free switch, if
+    the next foe's matchup favours another member.
+  - **Stat Scanner.** Log's Assistant in Frozen Heights gives it once 50+ species are registered as owned.
+    (`team_details` already shows EVs and IVs.)
+  - **Natures.** The Nature Changer in Tehl Town (the house south-west of the Center, after the side mission
+    'Seasonal Research') changes a nature: 1 free, then $50,000 each.
+  - **Vitamins.** They work up to 252 EVs in a stat.
 - **Battle with matchups.** Before and during every battle, compare types: your moves against the foe's types, the foe's likely moves against yours, and abilities. Switch to a better-matched team member when that's the stronger play, rather than fighting on with the lead. `get_state` shows each battler's types and ability.
 - **Healing.** Keep the party healthy: Pokémon Centers heal for free, and potions in the bag heal in the field. Check the lead's HP before walking through tall grass or caves. The lead is the first Pokémon that hasn't fainted.
 - **Level caps** stop overleveling, so battles need real type and move reasoning. `team_details` shows the cap

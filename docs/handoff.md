@@ -59,6 +59,24 @@ and "Level Caps"):
    `--fresh` stops the current mGBA and starts a new game; full1's save and workspace are kept. Then start the
    spectator for `expert1` and arm `ops/watch_run.py D:\ClaudeUnboundRuns\expert1`.
 
+- **#166:**
+  - `use_on` (vitamins / stones / Rare Candy). Live: Calcium +10 SpA EVs. The evolution path still needs a live check.
+  - `teach_tm` (forget-move flow). Live: TM40 to Batty, TM10 to Pip.
+  - `clear_obstacle` (Unbound: facing it and pressing A uses Cut / Rock Smash). Live: three rocks and a tree on
+    Route 2.
+- **Research before the run** (two web-research agents, 2026-10-09; verify in play):
+  - **Item Restrictions "4 Items Only":** items used in **trainer battles**, and in wild battles where the Pokemon
+    can't be caught. Expert can't loosen it. Whether it's per battle, and what counts, is not documented.
+  - **Shift:** the game asks to switch after you KO a trainer's Pokemon. The wording, and whether it shows in
+    doubles, are not documented.
+  - **Level caps:** the post-Tarmigan step comes from beating Successor Maxima at Tarmigan Mansion (Tarmigan Town,
+    after badge 4, before Dehara). Rare Candy does nothing at the cap (CFRU source).
+  - **Boxes:** CFRU has 25. The addresses of boxes 20-25 are in docs/addresses.md (plausible).
+  - **No mints.** The Nature Changer NPC is in Tehl Town (1 free after 'Seasonal Research', then $50,000) and at
+    the Battle Frontier (50 BP). The nature is probably rewritten into the personality.
+  - **Stat Scanner:** on Difficult and up, Log's Assistant in Frozen Heights once 50+ are owned.
+  - **Vitamins:** they work up to 252 EVs (CFRU patches the vanilla 100 cap).
+
 ## Other open issues
 - **#146:** walk_to learns refused moves. No live recurrence yet; follow-up: walk-test sideways-stair behaviours
   0xB0-0xB3 when nothing is playing.
