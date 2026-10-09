@@ -19,7 +19,7 @@ STATS = ["HP", "Atk", "Def", "Spe", "SpA", "SpD"]
 EV_TOTAL, EV_STAT = 510, 252
 # Level caps with Capped Exp. Share by badge count (Unbound wiki, Level Caps; "Difficult and above" table).
 # Index = badges; 4.5 (after Tarmigan Mansion) is between 4 and 5. Vanilla's differ (15 .. 66).
-CAPS = {"vanilla": [15, 22, 29, 33, 37, 51, 55, 60, 66], "expert": [20, 26, 32, 36, 40, 52, 57, 61, 75]}
+CAPS = {"vanilla": [15, 22, 29, 33, 37, 51, 55, 60, 66], "expert": [20, 26, 32, 36, 40, 52, 57, 61, 75]}  # Difficult+
 
 
 def nature_effect(nature):
@@ -123,6 +123,14 @@ def boxes(p):
 
 
 DIFFICULTY = os.environ.get("UNBOUND_DIFFICULTY", "vanilla")  # the run's difficulty (set by the runner for Expert)
+
+
+def level_cap(badges):
+    """The Capped Exp. Share level cap for BADGES at this run's difficulty. ponytail: the 'after Tarmigan Mansion'
+    step (between 4 and 5 badges: 43 Vanilla, 45 Difficult+) needs a story flag; until found, 4 badges -> 4-badge cap."""
+    if DIFFICULTY not in ("expert", "insane"):  # Capped Exp. Share is the default only there (off in this Vanilla
+        return None                            # run: the team is at 37-43 with 3 badges, over Vanilla's 33)
+    return CAPS["expert"][min(badges, 8)]
 
 
 def foe_evs(badges):

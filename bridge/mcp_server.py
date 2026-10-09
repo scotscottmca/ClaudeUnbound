@@ -561,7 +561,14 @@ def t_team_details(a):
     import stats
     n = p.read8(state_mod.PLAYER_PARTY_COUNT)
     raw = p.range(state_mod.PLAYER_PARTY, 100 * n)
-    return {"party": [stats.detail(raw[k * 100:(k + 1) * 100]) for k in range(n)],
+    badges = state_mod.get_state(p)["badges"]
+    cap = stats.level_cap(badges)
+    party = [stats.detail(raw[k * 100:(k + 1) * 100]) for k in range(n)]
+    at = [m["name"] for m in party if cap and m["level"] >= cap]
+    return {"party": party,
+            "level_cap": (f"{cap} ({stats.DIFFICULTY} difficulty, {badges} badges)" + (
+                f"; at or over it: {', '.join(at)} (they gain almost no EXP now: train the others, or win the next badge)"
+                if at else "")) if cap else f"none ({stats.DIFFICULTY} difficulty: Capped Exp. Share is off)",
             "rules": "Every 4 EVs in a stat = +1 at level 100 (about +1 per 4 EVs scaled by level/100 now). Max 510 EVs "
                      "in total, 252 in one stat. Defeating a Pokemon gives every party member its EV yield (Exp. Share). "
                      "Nature: +10% to one stat, -10% to another. IVs 0-31 are fixed per Pokemon."}
