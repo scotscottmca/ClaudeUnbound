@@ -25,7 +25,27 @@ Unbound is deep. Play thoroughly, not as a speedrun:
 - **Field obstacles.** Don't spend actions on cuttable trees, breakable rocks or boulders until a team member can use the matching field move (Cut, Rock Smash, Strength). Note where they are in `memory/map_notes.md` and come back once you can.
 - **Battle with matchups.** Before and during every battle, compare types: your moves against the foe's types, the foe's likely moves against yours, and abilities. Switch to a better-matched team member when that's the stronger play, rather than fighting on with the lead. `get_state` shows each battler's types and ability.
 - **Healing.** Keep the party healthy: Pokémon Centers heal for free, and potions in the bag heal in the field. Check the lead's HP before walking through tall grass or caves. The lead is the first Pokémon that hasn't fainted.
-- **Level caps** stop overleveling, so battles need real type and move reasoning.
+- **Level caps** stop overleveling, so battles need real type and move reasoning. `team_details` shows the cap
+  for your badges and who is at it (on Expert they gain almost no EXP there: train the others, or win the badge).
+- **Build the team; don't just level it** (essential on Expert):
+  - **Read before you fight:** in battle, `matchups` shows each of your moves' damage (% of the foe's HP, likely-KO)
+    and who moves first. Use it to pick the move, or the switch-in that takes the hit.
+  - **Losing is information.** After a loss (or a close win), write the opponent's team in `memory/opponents.md`
+    (species, levels, moves seen), then pick a fix before trying again:
+    - train the others up to the cap;
+    - catch a counter;
+    - rebuild from the PC (`pc_boxes` lists what you have; `pc_swap` at a Center);
+    - EV-train the stats that matter;
+    - hand out held items.
+  - **EVs:** every Pokemon you defeat gives your whole party EVs in its `ev_yield` stats (the foe line in a battle;
+    the Macho Brace doubles them). 4 EVs = +1 stat point at level 100, max 510 in total and 252 in one stat.
+    `team_details` shows each member's EVs and how many are left. Train deliberately: e.g. Speed on a fast
+    attacker by beating Speed-yield wild Pokemon, rather than whatever battle comes.
+  - **Natures** raise one stat 10% and lower another (`team_details`). Prefer leads whose nature suits their role.
+  - **Held items** matter: type boosters (Mystic Water, Charcoal...), Eviolite on a not-fully-evolved Pokemon,
+    Leftovers, Choice items, the Macho Brace while EV training. Use `give_item` / `take_item`.
+  - **The lead** starts every battle: set it with `reorder_party` for the next fight.
+  - **Shopping:** `buy(item, quantity)` at a Mart (Poke Balls, Potions, status cures; vitamins raise EVs).
 - **Items.** Whenever you obtain an item (found, bought, given, picked up), add it to `memory/items.md` with where you got it and what it does; when you use, give or sell one, update the count. Then you always know what's available, especially mid-battle (healing, status cures, battle items).
 - **Reference.** If a wiki tool is available, it covers only **Pokémon** (where to find them, types, abilities, evolutions, moves), **items** and **locations**. There is no walkthrough or mission guide: work out the story, where to go and how to finish missions yourself, from what NPCs say, signs, notice boards and your memory.
 
@@ -51,6 +71,15 @@ Unbound is deep. Play thoroughly, not as a speedrun:
 - To catch, `throw_ball(ball)` (e.g. `throw_ball("Poké Ball")`) opens the bag, throws that ball and reports "caught" or "broke free". After a catch it stops at "Give a nickname?": answer Yes (A), then `type_name`.
 - To heal, `use_item(item, pokemon)` (e.g. `use_item("Potion", "Batty")`) uses a healing item from the bag on a party member in one call, in the overworld or at your battle menu (in battle it uses up your turn), and reports HP before and after. It refuses when the item isn't in the bag, would do nothing (full HP, fainted without a Revive, no status to cure), or isn't a healing item. Use it instead of walking the start menu, bag and party screen with `press_buttons`.
 - On a naming screen (nickname, rival; `get_state` shows `naming_screen`), `type_name(name)` types the name and confirms it. Don't walk the keyboard with `press_buttons`.
+- **Team tools (overworld)**. Each one does the whole menu walk in one call and verifies the result; use them
+  instead of walking menus with `press_buttons`:
+  - `team_details`: natures, real stats, base stats, EVs, IVs, the level cap.
+  - `pc_boxes`: everything in your PC boxes. Works anywhere.
+  - `give_item(item, pokemon, replace)`, `take_item(pokemon)`: held items.
+  - `reorder_party(pokemon, position)`: e.g. position 1 makes it the lead.
+  - In a Pokemon Center: `pc_swap(pokemon, box, slot)`, `pc_deposit(pokemon)`, `pc_withdraw(box, slot)`. They walk
+    to the PC themselves and never release a Pokemon.
+  - In a Mart: `buy(item, quantity)`. It refuses an item the Mart doesn't sell, or one you can't afford.
 - **Never wait in real time.** The game keeps running while you think. To let time pass in the game (a patrol to move, an animation to finish), use `press_buttons` with `WAIT` (half a second each) and re-check with `get_state`. Never schedule wakeups or sleep: that parks you for minutes while nothing happens.
 - There is no rollback. Savestates are never loaded to get unstuck or to retry a fight: that's cheating. Lose a battle, black out, get stuck: play your way out (heal, train, rethink, ask the strategist or expert).
 - `read_memory` only to investigate something the state doesn't show.

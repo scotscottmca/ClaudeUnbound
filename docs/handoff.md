@@ -13,8 +13,9 @@ _Last updated: 2026-10-09, when the operator role moved from a long Opus session
 - **Cost:** about $50 API-equivalent in total (`run.spent_so_far`; the console's old "spent" figure summed session
   running totals and was wrong, #150).
 - **Where it stopped:** the runner was stopped on purpose at step 6477 (Fallshore City 14/3, just after badge 4). The
-  game is still running in mGBA at that point; it is the **test bed for the menu tools (#161)**: nothing is playing,
-  so a tool may drive the emulator.
+  game is still running in mGBA; it was the test bed for the menu tools (#161, #109). While testing, the operator
+  watched Mel's post-gym scene (received **HM02 Fly**; mission now "Follow Mel to Epidimy Town"), and bought
+  3 Potions and 10 Poke Balls in the Fallshore Mart. The party is unchanged; the player stands in the Mart (14/5).
 - **Final team:** Ion (Metang 43), Brawn (Hariyama 40), Bulwark (Hariyama 37), Batty (Crobat 39), Pip (Watchog 38),
   Splash (Samurott 37).
 
@@ -39,14 +40,16 @@ and "Level Caps"):
   (`UNBOUND_DIFFICULTY`), and seeds the agent's objectives to pick Expert at the new-game prompt.
 - **Last-resort walkthrough (#153, #159, #160):** indexed by section, gated, nothing reaches memory.
 
-## Expert work: to do (in order)
-1. **#161 menu tools:** PC deposit/withdraw/swap, give/take held item, reorder party. Build and verify on the parked
-   full1 game (no runner playing). Each tool re-reads party/storage to verify its result.
-2. **#109 buy tool:** purchase from a Poké Mart in one call (vitamins, held items).
-3. **agent/CLAUDE.md, Expert policy:** losing is information. Record the opponent's team, then train to the cap,
-   catch a counter, rebuild from the PC, EV-train the stats that matter, and hand out held items. Use
-   team_details/pc_boxes and the damage estimates.
-4. **#162:** start the Expert run (the checklist is in the issue):
+- **#161 menu tools, verified live:** `give_item` / `take_item` / `reorder_party` (party menu) and `pc_deposit` /
+  `pc_withdraw` / `pc_swap` (Center PC; never selects Release).
+- **#109 `buy`, verified live:** stock and money checks; the bonus Premier Ball for 10 balls.
+- **#164:** 33 garbled item names fixed (Unbound stores a pointer for long names).
+- **agent/CLAUDE.md:** the team tools, plus the Expert policy. Read matchups; losing is information, so record the
+  opponent and pick a fix (train to the cap, catch a counter, PC swap, EV training, held items); EVs, natures,
+  held items, the lead, shopping.
+
+## Expert work: to do
+1. **#162:** start the Expert run (the checklist is in the issue):
    ```
    python bridge/launch.py --detach runner --min cmd /c "python -u agent\run.py --workspace D:\ClaudeUnboundRuns\expert1 --fresh --bootstrap-from D:\ClaudeUnboundRuns\full1 --difficulty expert --goal-badges 8 >> D:\ClaudeUnboundRuns\expert1.console.log 2>&1"
    ```
