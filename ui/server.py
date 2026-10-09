@@ -370,6 +370,7 @@ class Stats:
         self.hub = hub
         self.s = {"actions": 0, "catches": [], "first": None, "last": None, "cost": 0.0, "chunks": 0,
                   "costed": 0, "tokens": {}}
+        self.session = 0.0  # the running session total of the last chunk: a chunk's cost_usd is cumulative (#150)
 
     def log(self, d):
         s = self.s
@@ -385,7 +386,17 @@ class Stats:
         s = self.s
         s["chunks"] += 0 if d.get("kind") else 1  # "kind": a harness-run watcher/verifier/curator call, not a chunk
         if d.get("cost_usd") is not None:
-            s["cost"] += d["cost_usd"]
+            c = d["cost_usd"]
+            if d.get("kind"):  # harness calls report their own cost
+                s["cost"] += c
+            else:  # runner chunks report the resumed session's running total: count only what this chunk added
+                if d.get("session_start"):
+                    self.session = 0.0
+                if "chunk_cost_usd" in d:
+                    s["cost"] += d["chunk_cost_usd"]
+                elif c:  # an errored chunk reports no cost and doesn't end the session
+                    s["cost"] += c - self.session if c >= self.session else c
+                self.session = c or self.session
             s["costed"] += 0 if d.get("kind") else 1  # chunks with a reported cost (harness calls are extra)
         for model, u in (d.get("models") or d.get("usage") or {}).items():
             if isinstance(u, dict) and model.startswith("claude"):

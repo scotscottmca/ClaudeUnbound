@@ -148,6 +148,43 @@ def last_mode(ws):
         return ""
 
 
+def chunk_cost(cost, prev):
+    """A chunk's own cost from the session's running total COST (claude -p reports the whole resumed session's cost,
+    not the chunk's: chunk 389 said $9.6197, chunk 390 $9.6304, i.e. $0.01). PREV is the running total after the
+    session's previous chunk; a lower total means a new session. ponytail: a new session that is costlier than the
+    old one's total at its first chunk is under-counted by that total; the runner marks session starts from now on."""
+    return cost - prev if cost >= prev else cost
+
+
+def spent_so_far(usage_log):
+    """True API-equivalent spend so far: each chunk's own cost (chunk_cost), plus harness calls (additive)."""
+    total, prev = 0.0, 0.0
+    if os.path.exists(usage_log):
+        for line in open(usage_log, encoding="utf-8"):
+            e = json.loads(line)
+            c = e.get("cost_usd") or 0
+            if e.get("kind"):
+                total += c
+                continue
+            if e.get("session_start"):
+                prev = 0.0
+            if "chunk_cost_usd" in e:
+                total += e["chunk_cost_usd"]
+            elif c:  # a chunk that errored reports no cost and doesn't end the session
+                total += chunk_cost(c, prev)
+            prev = c or prev
+    return total
+
+
+def actions(ws):
+    """How many game actions the agent has taken (tool results in log.jsonl)."""
+    try:
+        with open(os.path.join(ws, "log.jsonl"), encoding="utf-8", errors="replace") as f:
+            return sum('"result"' in line for line in f)
+    except OSError:
+        return 0
+
+
 def milestone():
     try:
         s = get_state(Probe())
@@ -171,7 +208,10 @@ def main():
     ap.add_argument("--bootstrap-from")
     ap.add_argument("--new-session", action="store_true",
                     help="start a new conversation (memory/ carries state) instead of --continue")
-    ap.add_argument("--budget-usd", type=float, default=float("inf"), help="pause when API-equivalent cost passes this")
+    ap.add_argument("--budget-usd", type=float, default=50.0,
+                    help="stop when this launch's API-equivalent spend passes this (default $50; history doesn't count)")
+    ap.add_argument("--idle-chunks", type=int, default=3,
+                    help="stop when this many chunks in a row take no game action (the agent stopped playing)")
     ap.add_argument("--goal-badges", type=int, default=1)
     ap.add_argument("--max-chunks", type=int, default=1000)
     ap.add_argument("--reloaded", action="store_true", help=argparse.SUPPRESS)  # set by the self-reload below
@@ -180,7 +220,9 @@ def main():
         sys.exit(f"{a.workspace} already has a run; pick a new --workspace for a fresh run")
     setup(a.workspace, a.fresh, a.bootstrap_from, a.goal_badges, a.reloaded)
     usage_log = os.path.join(a.workspace, "usage.jsonl")
-    spent = sum(json.loads(l).get("cost_usd") or 0 for l in open(usage_log, encoding="utf-8")) if os.path.exists(usage_log) else 0
+    spent = spent_so_far(usage_log)
+    budget_end = spent + a.budget_usd  # per launch: a resumed run's history doesn't count against it
+    session_total, idle = 0.0, 0
     first = a.fresh or a.new_session or not os.path.exists(usage_log)
     me = os.path.abspath(__file__)
     started = os.path.getmtime(me)
@@ -190,20 +232,27 @@ def main():
             # mGBA). A child rather than os.execv: on Windows execv swaps the PID, so whoever watches the runner
             # would see it exit.
             print("run.py changed: reloading the runner", flush=True)
-            args = [sys.executable, me, "--workspace", a.workspace, "--budget-usd", str(a.budget_usd),
+            args = [sys.executable, me, "--workspace", a.workspace, "--budget-usd", str(budget_end - spent),
+                    "--idle-chunks", str(a.idle_chunks),
                     "--goal-badges", str(a.goal_badges), "--max-chunks", str(a.max_chunks - n), "--reloaded"]
             sys.exit(subprocess.call(args + (["--new-session"] if first else [])))
         print(f"chunk {n}: {'start' if first else 'continue'} (spent ${spent:.2f} API-equivalent)")
+        if first:
+            session_total = 0.0
+        acted = actions(a.workspace)
         res, secs = chunk(a.workspace, first, NEXT.format(goal=goal_text(a.goal_badges)),
                           FIRST + (BOOTSTRAP if n == 0 and a.fresh and a.bootstrap_from else ""))
         text = str(res.get("result", ""))
         wait = limit_wait(text) if res.get("is_error") else None
         entry = {"t": round(time.time()), "chunk": n, "secs": round(secs), "turns": res.get("num_turns"),
                  "is_error": res.get("is_error"), "usage": res.get("usage"), "cost_usd": res.get("total_cost_usd", 0),
-                 "models": res.get("modelUsage"), "milestone": milestone(), "note": text[-300:]}
+                 "models": res.get("modelUsage"), "milestone": milestone(), "note": text[-300:],
+                 "session_start": first, "chunk_cost_usd": chunk_cost(res.get("total_cost_usd", 0) or 0, session_total)}
+        session_total = res.get("total_cost_usd", 0) or session_total
         with open(usage_log, "a", encoding="utf-8") as f:
             f.write(json.dumps(entry) + "\n")
-        spent += entry["cost_usd"] or 0
+        spent += entry["chunk_cost_usd"]
+        idle = idle + 1 if actions(a.workspace) == acted else 0
         if wait:
             print(f"usage window exhausted; waiting {wait / 60:.0f} min")
             time.sleep(wait)
@@ -212,8 +261,12 @@ def main():
         if entry["milestone"].get("badges", 0) >= a.goal_badges:  # badges only: "so no GOAL REACHED" once ended a run at 0 badges
             print("goal reached:", entry["milestone"])
             return
-        if spent > a.budget_usd:
-            sys.exit(f"budget alarm: ${spent:.2f} API-equivalent > ${a.budget_usd}")
+        if spent > budget_end:
+            sys.exit(f"budget alarm: ${spent:.2f} API-equivalent spent, this launch's ${a.budget_usd} budget used up")
+        if idle >= a.idle_chunks:
+            # The agent stopped playing (e.g. "I'm stopping ... I need a hint"): resuming it every few seconds only
+            # repeats that (390 chunks, step 6061, #150). Stop and leave it to the operator.
+            sys.exit(f"stalled: {idle} chunks in a row without a game action; the agent said: {text[-300:]!r}")
     print("max chunks reached")
 
 

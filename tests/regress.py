@@ -575,6 +575,20 @@ def watch_area():
 
 
 @case(emu=False)
+def runner_cost_tally():
+    # claude -p reports a resumed session's running total, not the chunk's cost (#150): count each chunk's increase
+    # once, a drop as a new session, an errored zero-cost chunk as nothing, harness calls as they are.
+    import json
+    import run
+    p = os.path.join(tempfile.mkdtemp(dir=TMP), "usage.jsonl")
+    rows = [{"chunk": 0, "cost_usd": 1.0}, {"chunk": 1, "cost_usd": 2.0}, {"chunk": 2, "cost_usd": 0, "is_error": True},
+            {"chunk": 3, "cost_usd": 3.0}, {"kind": "watcher", "cost_usd": 0.1}, {"chunk": 4, "cost_usd": 0.5},
+            {"chunk": 5, "cost_usd": 0.75, "session_start": True, "chunk_cost_usd": 0.75}]
+    open(p, "w").write("".join(json.dumps(r) + "\n" for r in rows))
+    assert abs(run.spent_so_far(p) - (3.0 + 0.1 + 0.5 + 0.75)) < 1e-9, run.spent_so_far(p)
+
+
+@case(emu=False)
 def planner_no_move():
     # A move the game refused (walk_to learns it per map) is planned around, not retried.
     w = {"width": 3, "height": 2, "player": [0, 0], "elevation": 3, "npcs": [], "tile": lambda x, y: (0, 0, 3)}
