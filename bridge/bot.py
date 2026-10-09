@@ -698,7 +698,7 @@ def exit_to(w, target):
     # A wide exit mat can list a warp event per tile while only one has a warp behavior: Dresco Town
     # (7,4) has events at (7..9,18) but only (8,18) is a south arrow (0x65); the others are plain floor.
     live = {t for t in warps if w["tile"](*t)[0] in W.WARP}
-    warps = live or warps
+    warps = live or {t for t in warps if w["tile"](*t)[0] != W.ARRIVAL_ONLY}  # an uncatalogued warp tile, never plain floor
     if warps:
         return warps, None
     raise SystemExit(f"no connection or warp to {target!r} from here")
@@ -791,7 +791,9 @@ def go(p, target, reroute=True):
             print(f"reached {target} at {s['pos']} after {step} steps")
             return
         if here not in hops:  # first step, or knocked off the route (e.g. whited out)
-            hops = [here] + (W.route(p, here, target, closed) or stop(p, f"no open map route to {target}"))
+            hops = [here] + (W.route(p, here, target, closed) or stop(p, f"no open map route to {target}" + (
+                " (this map has no walk-out exit: its warps are arrival-only, on plain floor; it's left through "
+                "a puzzle, a script or a person here)" if not W.map_links(p, *here) else "")))
             print(f"{step}: route {' > '.join(W.map_name(p, *h) + str(list(h)) for h in hops)}")
             path, blocked = [], set()
         nxt = hops[hops.index(here) + 1]
