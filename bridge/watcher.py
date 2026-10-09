@@ -217,7 +217,8 @@ def drain(log_fn=None):
     while RT.inbox:
         kind, step, text = RT.inbox.pop(0)
         out.append(f"WATCHER (step {step}): {text}" if kind == "watcher" else f"VERIFIER (as of step {step}): {text}"
-                   if kind == "verifier" else f"MEMORY: {text}")
+                   if kind == "verifier" else f"OPERATOR HINT (new, pinned in memory/operator.md; true, act on it): {text}"
+                   if kind == "operator" else f"MEMORY: {text}")
     return out
 
 
@@ -316,6 +317,13 @@ def guard(ws, step=0):
             want = open(src, encoding="utf-8").read()
             if not os.path.exists(dst) or open(dst, encoding="utf-8").read() != want:
                 open(dst, "w", encoding="utf-8").write(want)
+            hints = {ln for ln in want.splitlines() if ln.strip() and not ln.startswith("#")}
+            if getattr(RT, "hints", None) is None:
+                RT.hints = hints  # first look: these are read at session start
+            new = sorted(hints - RT.hints, key=want.index)
+            if new:  # a hint added mid-session reaches the agent now, not only at its next session start
+                RT.inbox.append(("operator", step, " | ".join(new)))
+                RT.hints |= hints
         if getattr(RT, "mem", None) is not None:
             archive_lost(mem, RT.mem)
         purge_forbidden(ws, getattr(RT, "mem", None), step)  # before the snapshot: a deleted copy is never archived
