@@ -46,14 +46,28 @@ def goal_text(badges):
     return "the first badge" if badges == 1 else f"{badges} badges"
 
 
-def setup(ws, fresh, bootstrap, goal_badges, reloaded=False):
+def difficulty_of(ws, wanted=None):
+    """The run's difficulty: WANTED (and remembered in WS/run.json), else what run.json says, else vanilla."""
+    path = os.path.join(ws, "run.json")
+    cfg = json.load(open(path, encoding="utf-8")) if os.path.exists(path) else {}
+    if wanted:
+        cfg["difficulty"] = wanted
+        os.makedirs(ws, exist_ok=True)
+        with open(path, "w", encoding="utf-8") as f:
+            json.dump(cfg, f)
+    return cfg.get("difficulty", "vanilla")
+
+
+def setup(ws, fresh, bootstrap, goal_badges, reloaded=False, difficulty="vanilla"):
     os.makedirs(os.path.join(ws, "memory"), exist_ok=True)
     shutil.copy(os.path.join(REPO, "agent", "CLAUDE.md"), os.path.join(ws, "CLAUDE.md"))
     if bootstrap and fresh:  # on a resume, memory/ is already this run's
         shutil.copytree(os.path.join(bootstrap, "memory"), os.path.join(ws, "memory"), dirs_exist_ok=True,
                         ignore=lambda _d, names: [n for n in names if n in RUN_STATE])
     seed = {"objectives.md": f"# Objectives\n\n- Goal: earn {goal_text(goal_badges)}.\n"
-                             "- Next: find out where I am and what the current mission says.\n",
+                             + (f"- Difficulty: {difficulty.upper()}. At the new-game difficulty prompt choose {difficulty.title()} "
+                                "(VERIFY before answering: it can't be raised later).\n" if difficulty != "vanilla" else "")
+                             + "- Next: find out where I am and what the current mission says.\n",
             "learnings.md": "# Learnings\n\n"}
     for name, text in seed.items():
         path = os.path.join(ws, "memory", name)
@@ -63,7 +77,8 @@ def setup(ws, fresh, bootstrap, goal_badges, reloaded=False):
     with open(os.path.join(ws, "mcp.json"), "w", encoding="utf-8") as f:
         json.dump({"mcpServers": {"unbound": {"command": sys.executable,
                                               "args": [os.path.join(REPO, "bridge", "mcp_server.py")],
-                                              "env": {"UNBOUND_LOG": os.path.join(ws, "log.jsonl")}}}}, f)
+                                              "env": {"UNBOUND_LOG": os.path.join(ws, "log.jsonl"),
+                                                      "UNBOUND_DIFFICULTY": difficulty}}}}, f)
     if fresh:  # the only path that stops an emulator, and only on an explicit --fresh
         subprocess.run(["taskkill", "/IM", "mGBA.exe", "/F"], capture_output=True)
         time.sleep(2)
@@ -213,12 +228,15 @@ def main():
     ap.add_argument("--idle-chunks", type=int, default=3,
                     help="stop when this many chunks in a row take no game action (the agent stopped playing)")
     ap.add_argument("--goal-badges", type=int, default=1)
+    ap.add_argument("--difficulty", choices=["vanilla", "difficult", "expert", "insane"],
+                    help="the run's difficulty (remembered in the workspace's run.json; default: what it says, else vanilla)")
     ap.add_argument("--max-chunks", type=int, default=1000)
     ap.add_argument("--reloaded", action="store_true", help=argparse.SUPPRESS)  # set by the self-reload below
     a = ap.parse_args()
     if a.fresh and os.path.exists(os.path.join(a.workspace, "transcripts")):
         sys.exit(f"{a.workspace} already has a run; pick a new --workspace for a fresh run")
-    setup(a.workspace, a.fresh, a.bootstrap_from, a.goal_badges, a.reloaded)
+    difficulty = difficulty_of(a.workspace, a.difficulty)
+    setup(a.workspace, a.fresh, a.bootstrap_from, a.goal_badges, a.reloaded, difficulty)
     usage_log = os.path.join(a.workspace, "usage.jsonl")
     spent = spent_so_far(usage_log)
     budget_end = spent + a.budget_usd  # per launch: a resumed run's history doesn't count against it

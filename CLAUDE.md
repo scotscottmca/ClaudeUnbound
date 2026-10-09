@@ -8,11 +8,19 @@ A harness for Claude to play Pokémon Unbound 2.1.1.1 (a CFRU-based FireRed romh
 
 **Read `docs/learnings.md` before building or playing**, and add an entry whenever something fails or an assumption proves false. Its core rule: vanilla FireRed/CFRU knowledge is a hypothesis on Unbound. Verify with a cheap experiment (RAM diff, walk test, screenshot) before building on it. `docs/gameplay-policy.md` defines how the agent should play (full exploration, every mission, rename every capture, record opponents; the unboundwiki.com corpus may be consulted).
 
+## Operator sessions
+
+If you are the **operator** (watching the playing agent, fixing the harness, managing issues), read
+`docs/operator-runbook.md` and then `docs/handoff.md` before anything else. The runbook defines the operator loop
+(Haiku judges, the `ops-verifier` subagent (Sonnet) verifies, `ops-engineer` (Opus) / `ops-expert` (Fable) do the
+work, the verifier checks it again before anything ships), the hard rules, and how to start a session.
+
 ## Running
 
 No build, test suite or linter. Python scripts in `bridge/` are run directly, from inside `bridge/` (they import each other as top-level modules).
 
-- `python bridge/launch.py [STATE]`: start the mGBA dev build (0.11+, needs `--script`; path from the `MGBA` env var) with `probe.lua`, unless an mGBA is already running (it attaches if that one serves 127.0.0.1:8888, else refuses). The build's portable `config.ini` needs `[override.BPRE]` `savetype=FLASH1M` and `hardware=1`. launch.py caps speed at 2x (the user's limit) with mGBA's own limiter (`-C audioSync=1 -C fpsTarget=120`: 120 fps, ~2.4% CPU), normal priority (below-normal starved its display, #144). It starts mGBA **detached through WMI** (`Win32_Process.Create`, parent WmiPrvSE), so it outlives whatever launched it: started from a Claude Code shell, mGBA died with the app when the app auto-updated (#151). Start the runner and the spectator the same way: `python bridge/launch.py --detach NAME [--min] COMMAND...` (e.g. `--detach runner --min cmd /c "python -u agentun.py --workspace D:\ClaudeUnboundRunsull1 --goal-badges 8 >> D:\ClaudeUnboundRunsull1.console.log 2>&1"`). Started inside a disconnected remote desktop session, audio sync never runs a frame, so launch.py waits and retries every 5 minutes rather than run unthrottled. On mGBA 0.10, load `bridge/probe.lua` by hand via Tools → Scripting.
+- `python bridge/launch.py [STATE]`: start the mGBA dev build (0.11+, needs `--script`; path from the `MGBA` env var) with `probe.lua`, unless an mGBA is already running (it attaches if that one serves 127.0.0.1:8888, else refuses). The build's portable `config.ini` needs `[override.BPRE]` `savetype=FLASH1M` and `hardware=1`. launch.py caps speed at 2x (the user's limit) with mGBA's own limiter (`-C audioSync=1 -C fpsTarget=120`: 120 fps, ~2.4% CPU), normal priority (below-normal starved its display, #144). It starts mGBA **detached through WMI** (`Win32_Process.Create`, parent WmiPrvSE), so it outlives whatever launched it: started from a Claude Code shell, mGBA died with the app when the app auto-updated (#151). Start the runner and the spectator the same way: `python bridge/launch.py --detach NAME [--min] COMMAND...` (e.g. `--detach runner --min cmd /c "python -u agent
+un.py --workspace D:\ClaudeUnboundRunsull1 --goal-badges 8 >> D:\ClaudeUnboundRunsull1.console.log 2>&1"`). Started inside a disconnected remote desktop session, audio sync never runs a frame, so launch.py waits and retries every 5 minutes rather than run unthrottled. On mGBA 0.10, load `bridge/probe.lua` by hand via Tools → Scripting.
 - `python state.py` → state JSON; `python state.py press UP [FRAMES] [SETTLE]` → traced press (before/after snapshot, `moved`, `changed`).
 - `python world.py [full]` → collision grid (viewport or whole map) plus NPC/warp/sign/connection lists.
 - `python probe.py read32|range|dump|diff|step|press|shot|save|load|autosave ...` → raw bridge access; `dump` + `diff` is the standard way to find new RAM addresses.
