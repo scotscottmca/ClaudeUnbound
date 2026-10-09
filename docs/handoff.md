@@ -66,7 +66,15 @@ and "Level Caps"):
    - `run/baseline_difficult.ss1`: a Difficult variant made from it.
 
    The runner refuses a non-Vanilla `--fresh` without `--baseline`. The Vanilla run's in-game save is kept at
-   `D:\ClaudeUnboundRuns\full1\Unbound_full1_final.sav` (and `run/Unbound.sav.*.full1.bak`). Then start the
+   `D:\ClaudeUnboundRuns\full1\Unbound_full1_final.sav` (and `run/Unbound.sav.*.full1.bak`).
+
+   **Spectator (port 8765):** the one still running watches `full1` and holds the port. After the runner has
+   created `expert1` (about a minute), stop it and start a new one:
+   ```powershell
+   Get-CimInstance Win32_Process -Filter "name='python.exe'" | ? { $_.CommandLine -match 'ui\\server\.py' } | % { Stop-Process -Id $_.ProcessId -Force }
+   python bridge/launch.py --detach spectator --min python D:\Repos\ClaudeUnbound\ui\server.py --workspace D:\ClaudeUnboundRuns\expert1 --port 8765
+   ```
+   Check that http://127.0.0.1:8765/ answers, and tell the human to refresh the page. Then start the
    spectator for `expert1` and arm `ops/watch_run.py D:\ClaudeUnboundRuns\expert1`.
 
 - **#166:**
