@@ -195,7 +195,9 @@ def search(query, n=5):
 
 def read(url_or_slug):
     """Full cached page {url, title, section, text} for a wiki URL, a path like 'pokemon/snorunt', or a slug."""
-    s = url_or_slug if url_or_slug.startswith("http") else SITE + url_or_slug.replace("__", "/").strip("/") + "/"
+    # Any form of the site's own address works: full URL, without the scheme ('unboundwiki.com/locations/x'), a path, a slug.
+    path = re.sub(r"^(?:https?://)?(?:www\.)?unboundwiki\.com/", "", url_or_slug.strip())
+    s = path if path.startswith("http") else SITE + path.replace("__", "/").strip("/") + "/"
     if section(s) not in ALLOWED_SECTIONS:
         raise KeyError(f"{url_or_slug!r} is outside the indexed sections {sorted(ALLOWED_SECTIONS)}")
     f = PAGES / f"{slug(s)}.json"
