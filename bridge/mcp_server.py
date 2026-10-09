@@ -557,6 +557,16 @@ def t_walk_to(a):
     return run_bot(walk)
 
 
+def t_team_details(a):
+    import stats
+    n = p.read8(state_mod.PLAYER_PARTY_COUNT)
+    raw = p.range(state_mod.PLAYER_PARTY, 100 * n)
+    return {"party": [stats.detail(raw[k * 100:(k + 1) * 100]) for k in range(n)],
+            "rules": "Every 4 EVs in a stat = +1 at level 100 (about +1 per 4 EVs scaled by level/100 now). Max 510 EVs "
+                     "in total, 252 in one stat. Defeating a Pokemon gives every party member its EV yield (Exp. Share). "
+                     "Nature: +10% to one stat, -10% to another. IVs 0-31 are fixed per Pokemon."}
+
+
 def t_map_levels(a):
     w = W.read_world(p)
     target = (a["x"], a["y"]) if "x" in a and "y" in a else None
@@ -761,6 +771,10 @@ TOOLS = {
                 "dialog, or when blocked.",
                 S({"x": {"type": "integer"}, "y": {"type": "integer"}, "max_steps": {"type": "integer"}},
                   ["x", "y"]), True),
+    "team_details": (t_team_details, "Your party's training detail: nature (which stat it raises/lowers), real stats, "
+                     "base stats, EVs per stat with the total used of 510, and IVs. Use it to plan EV training (in battle, "
+                     "get_state shows each foe's ev_yield), choose leads and held items, and compare team members.",
+                     S({}), False),
     "map_levels": (t_map_levels, "Explain this map's levels: it splits the map into regions you can walk around in (bridges, "
                    "walkways and lower paths such as lily pads are separate regions even where they overlap on screen), "
                    "with each region's level, extent, warps, objects at its edge (a Lapras or a person may carry you across) "

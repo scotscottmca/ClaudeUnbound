@@ -128,6 +128,11 @@ def raw(p):
     return {"cb2": hex(cb2), "locked": locked, "printer": printer, "mode": mode, "script": ctx[1]}
 
 
+NATURES = ["Hardy", "Lonely", "Brave", "Adamant", "Naughty", "Bold", "Docile", "Relaxed", "Impish", "Lax", "Timid",
+           "Hasty", "Serious", "Jolly", "Naive", "Modest", "Mild", "Quiet", "Bashful", "Rash", "Calm", "Gentle",
+           "Sassy", "Careful", "Quirky"]  # personality % 25 (verified by recomputing stored stats, #156)
+
+
 def caught(p, species):
     """True if the Pokedex marks this species (internal id) as caught."""
     n = p.read16(SPECIES_TO_DEX + 2 * species)
@@ -135,6 +140,7 @@ def caught(p, species):
 
 
 def get_state(p):
+    import stats  # here, not at the top: stats imports state
     r = raw(p)
     sb1 = p.read32(SB1_PTR)
     x, y, group, num = struct.unpack("<hhbb", p.range(sb1, 6))
@@ -175,6 +181,7 @@ def get_state(p):
             "name": decode(m[0x08:0x12]), "species": NAMES["species"][species], "level": m[0x54],
             "hp": f"{hp}/{max_hp}", "status": status_name(struct.unpack("<I", m[0x50:0x54])[0]),
             "item": NAMES["items"][item] if item else None,
+            "nature": NATURES[struct.unpack("<I", m[0:4])[0] % 25],  # EVs/IVs/stats: the team_details tool (#156)
             "moves": moves(struct.unpack("<4H", m[0x2C:0x34]), m[0x34:0x38]),
         })
     if r["mode"] == "battle" and p.read32(BATTLE_TYPE_FLAGS) & PARTNER_BATTLE:
@@ -196,7 +203,8 @@ def get_state(p):
                 "types": types, "ability": NAMES["abilities"][b[0x20]],
                 "status": status_name(struct.unpack("<I", b[0x4C:0x50])[0]),
                 **({"moves": moves(struct.unpack("<4H", b[0x0C:0x14]), b[0x24:0x28])} if i % 2 == 0
-                   else {"caught": caught(p, species)}),  # already caught: defeat it or run, don't re-catch
+                   else {"caught": caught(p, species),  # already caught: defeat it or run, don't re-catch
+                         "ev_yield": " ".join(f"{k} +{v}" for k, v in stats.base(species)[1].items())}),
             })
         s["battle"]["text"] = decode(p.range(DISPLAYED_STRING_BATTLE, 0x100))
     if r["mode"] == "dialog":

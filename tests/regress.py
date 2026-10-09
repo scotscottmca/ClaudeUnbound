@@ -597,6 +597,12 @@ def runner_cost_tally():
 
 
 @case(emu=False)
+def stats_self_check():
+    import stats
+    stats._selftest()
+
+
+@case(emu=False)
 def map_levels():
     # A level-4 bridge (row 1) over a level-3 pad path (column 2, crossing under it on a level-15 tile): two regions,
     # and the pads' region says it isn't enterable on foot from the bridge.

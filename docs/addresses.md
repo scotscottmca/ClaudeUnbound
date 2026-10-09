@@ -185,7 +185,8 @@ Unbound numbers abilities differently from public CFRU, so never use CFRU's `ABI
 | Table | ROM address | Layout |
 |---|---|---|
 | Ability names | 0x08A36398 | 293 entries × 17 bytes, Gen 3 text. 0 = "-------", 77 = "Unused" |
-| Species base stats | 0x099E0C9C | 0x1C per species. Types +6/+7, ability 1 +0x16, ability 2 +0x17 (0 = none), hidden ability +0x1A. Larvitar is species 246, Inkay 794, Snorunt 346 |
+| Species base stats | 0x099E0C9C | 0x1C per species. Base stats +0..+5 (HP Atk Def Spe SpA SpD), types +6/+7, EV yield u16 +0x0A (2 bits per stat, same order; verified against the wiki's EV-yield table: Charizard SpA 3, Blastoise SpD 3, Snorlax HP 2, Caterpie HP 1, Alakazam SpA 3, Metang Def 2, Hariyama HP 2), growth rate +0x13, ability 1 +0x16, ability 2 +0x17 (0 = none), hidden ability +0x1A. Larvitar is species 246, Inkay 794, Snorunt 346 |
+| Party Pokemon training data | gPlayerParty + 100*i | verified (#156): EVs u8 x6 +0x38, IVs 5 bits x6 packed in u32 +0x48 (HP Atk Def Spe SpA SpD), nature = personality (+0x00) % 25, stored stats u16 x6 +0x58 (maxHP Atk Def Spe SpA SpD). Evidence: recomputing all six live party members' stats from base stats + IVs + EVs + level + nature matched the stored stats exactly (2026-10-09). Nature mints, if Unbound has them, are unverified |
 
 - **Storage is u8 everywhere.** Species base stats and `gBattleMons` +0x20 hold a single byte. No species uses an ID above 255.
 - **IDs 256–292 are display-name aliases**, not separate abilities: Air Lock, Vital Spirit, White Smoke, Pure Power, Iron Barbs, Solid Rock, Turboblaze, Teravolt, the Neighs, Libero and so on. The species table stores the effect's ID (Rayquaza 13 Cloud Nine, Ferrothorn 24 Rough Skin, Reshiram 152 Mold Breaker) and the game shows the alias name for specific species. The alias lookup isn't a plain (species, id) table; it's probably in code. Left for #6, since only the display name depends on it.
