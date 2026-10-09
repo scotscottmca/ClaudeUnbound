@@ -580,6 +580,21 @@ def t_reorder_party(a):
     return _menu_tool(party_menu.reorder_party, a["pokemon"], a["position"])
 
 
+def t_pc_deposit(a):
+    import pc
+    return _menu_tool(pc.pc_deposit, a["pokemon"], a.get("box"))
+
+
+def t_pc_withdraw(a):
+    import pc
+    return _menu_tool(pc.pc_withdraw, a["box"], a["slot"])
+
+
+def t_pc_swap(a):
+    import pc
+    return _menu_tool(pc.pc_swap, a["pokemon"], a["box"], a["slot"])
+
+
 def t_team_details(a):
     import stats
     n = p.read8(state_mod.PLAYER_PARTY_COUNT)
@@ -824,6 +839,17 @@ TOOLS = {
                       "swapping it with whoever is there (overworld). Verifies the new order.",
                       S({"pokemon": {"type": "string", "description": "nickname"}, "position": {"type": "integer"}},
                         ["pokemon", "position"]), True),
+    "pc_swap": (t_pc_swap, "At a Pokemon Center: put party member POKEMON into the PC and take the Pokemon in BOX/SLOT "
+                "(as pc_boxes lists them) into the party, in one call. Walks to the Center's PC itself. Verifies the "
+                "result. Use it to rebuild the team for the next gym or after a loss.",
+                S({"pokemon": {"type": "string", "description": "party nickname to store"}, "box": {"type": "integer"},
+                   "slot": {"type": "integer"}}, ["pokemon", "box", "slot"]), True),
+    "pc_deposit": (t_pc_deposit, "At a Pokemon Center: store a party member in the PC (box: optional, default the first "
+                   "box with room). Walks to the PC itself; verifies the result.",
+                   S({"pokemon": {"type": "string"}, "box": {"type": "integer"}}, ["pokemon"]), True),
+    "pc_withdraw": (t_pc_withdraw, "At a Pokemon Center: take the Pokemon in BOX/SLOT (as pc_boxes lists them) into the "
+                    "party (needs a free party slot). Walks to the PC itself; verifies the result.",
+                    S({"box": {"type": "integer"}, "slot": {"type": "integer"}}, ["box", "slot"]), True),
     "team_details": (t_team_details, "Your party's training detail: nature (which stat it raises/lowers), real stats, "
                      "base stats, EVs per stat with the total used of 510, and IVs. Use it to plan EV training (in battle, "
                      "get_state shows each foe's ev_yield), choose leads and held items, and compare team members.",
