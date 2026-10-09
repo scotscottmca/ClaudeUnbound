@@ -605,6 +605,11 @@ def t_fly(a):
     return _menu_tool(fly.fly, a["destination"])
 
 
+def t_use_on(a):
+    import items
+    return _menu_tool(items.use_on, a["item"], a["pokemon"])
+
+
 def t_team_details(a):
     import stats
     n = p.read8(state_mod.PLAYER_PARTY_COUNT)
@@ -853,6 +858,11 @@ TOOLS = {
             "HM02 in the TM Case and a party Pokemon that COULD learn Fly (it doesn't have to know it). Refuses a place "
             "you haven't visited yet. Use it for any long trip back: a Center, a Mart, an earlier town, a gym.",
             S({"destination": {"type": "string", "description": "e.g. 'Dresco Town'"}}, ["destination"]), True),
+    "use_on": (t_use_on, "Overworld: use a vitamin (HP Up, Protein, Iron, Carbos, Calcium, Zinc: +EVs in one stat), an "
+               "evolution stone, or a Rare Candy on a party member, in one call. Refuses when it would do nothing (EVs "
+               "full) and verifies the effect. An evolution or a 'learn a new move?' question is left to you. "
+               "(Healing items: use_item.)",
+               S({"item": {"type": "string"}, "pokemon": {"type": "string", "description": "nickname"}}, ["item", "pokemon"]), True),
     "buy": (t_buy, "In a Poke Mart: buy QUANTITY (1-99) of ITEM in one call. Walks to the clerk, checks the item is "
             "stocked (lists what is if not) and that you can afford it, confirms, and reports the new count and money.",
             S({"item": {"type": "string"}, "quantity": {"type": "integer"}}, ["item"]), True),

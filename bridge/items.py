@@ -195,6 +195,96 @@ def use_item(p, item, pokemon):
                      "back to the overworld: look at the screen")
 
 
+# Non-healing items used on a party member from the field bag (#166): vitamins (EVs), evolution stones, Rare Candy.
+# The bag -> Use -> party flow is use_item's; the check differs: EVs rose, the species changed, the level rose.
+VITAMINS = {"HP Up": 0, "Protein": 1, "Iron": 2, "Carbos": 3, "Calcium": 4, "Zinc": 5}  # -> HP Atk Def Spe SpA SpD
+STONES = {"Fire Stone", "Water Stone", "Thunder Stone", "Thunderstone", "Leaf Stone", "Moon Stone", "Sun Stone",
+          "Shiny Stone", "Dusk Stone", "Dawn Stone", "Ice Stone"}
+OTHER = {"Rare Candy"}
+
+
+def _snapshot(p, pid):
+    n = p.read8(PLAYER_PARTY_COUNT)
+    d = p.range(PLAYER_PARTY, 100 * n)
+    for i in range(n):
+        m = d[100 * i:100 * (i + 1)]
+        if struct.unpack("<I", m[:4])[0] == pid:
+            return {"species": NAMES["species"][struct.unpack("<H", m[0x20:0x22])[0]], "level": m[0x54],
+                    "evs": list(m[0x38:0x3E])}
+    return None
+
+
+def use_on(p, item, pokemon):
+    """Field: use a vitamin, an evolution stone or a Rare Candy from the Items pocket on party member POKEMON.
+    An evolution or a move-learning question is the agent's call: the tool stops there and says so."""
+    name = next((n for n in list(VITAMINS) + sorted(STONES) + sorted(OTHER) if _plain(n) == _plain(item)), None)
+    if name is None:
+        raise SystemExit(f"use_on takes vitamins ({', '.join(VITAMINS)}), evolution stones or Rare Candy; for "
+                         "healing items use use_item")
+    bag = _items(p)
+    if name not in bag:
+        raise SystemExit(f"no {name} in the Items pocket")
+    party = _party(p)
+    hits = [m for m in party if m[1].lower() == pokemon.lower()]
+    if len(hits) != 1:
+        raise SystemExit(f"{'no' if not hits else 'two'} {pokemon!r} in the party: {[m[1] for m in party]}")
+    pid = hits[0][0]
+    before = _snapshot(p, pid)
+    if name in VITAMINS:
+        i = VITAMINS[name]
+        if sum(before["evs"]) >= 510 or before["evs"][i] >= 252:
+            raise SystemExit(f"{pokemon}'s EVs are full ({sum(before['evs'])}/510 total, {before['evs'][i]}/252 in "
+                             f"that stat): {name} would do nothing")
+    if raw(p)["mode"] != "overworld" or p.read32(CB2) == CB2_BATTLE:
+        raise SystemExit("use_on works in the overworld only: close the text, menu or battle first")
+    if not _start_menu_open(p):
+        p.press("START", 4)
+        p.step(20)
+        if not _start_menu_open(p):
+            raise SystemExit("START didn't open the start menu: look at the screen")
+    for _ in range(8):
+        cur = p.read8(START_CURSOR)
+        if cur == 2:
+            break
+        p.press("RIGHT" if cur < 2 else "LEFT", 4)
+        p.step(10)
+    p.press("A", 4)
+    if not _wait_cb2(p, CB2_BATTLE_BAG):
+        raise SystemExit("the bag didn't open: look at the screen")
+    try:
+        msg = _choose(p, bag.index(name), name, pid)
+    except SystemExit:
+        msg = ""  # an evolution takes over the screen instead of printing a message
+    for _ in range(120):  # an evolution scene runs on its own; wait for it to end or to ask something
+        r = raw(p)
+        if p.read32(CB2) in (CB2_BATTLE_PARTY, CB2_BATTLE_BAG) or r["mode"] == "overworld":
+            break
+        if r["mode"] == "dialog" and r["printer"][0x1C] == 2:
+            text = decode(p.range(STRING_VAR4, 0x100)).replace("\n", " ")
+            if "?" in text:
+                return f"{name} on {pokemon}: the game asks {text!r}. Answer it yourself (advance_dialog / press_buttons)."
+            p.press("A", 4)
+        p.step(10)
+    import party_menu
+    party_menu.close(p)
+    after = _snapshot(p, pid)
+    said = f" (the game said: {msg})" if msg else ""
+    if name in VITAMINS:
+        i = VITAMINS[name]
+        if after["evs"][i] <= before["evs"][i]:
+            raise SystemExit(f"{name} did nothing to {pokemon}{said}")
+        return (f"{name} on {pokemon}: {('HP', 'Atk', 'Def', 'Spe', 'SpA', 'SpD')[i]} EVs {before['evs'][i]} -> "
+                f"{after['evs'][i]} (total {sum(after['evs'])}/510){said}")
+    if name in STONES:
+        if after["species"] == before["species"]:
+            raise SystemExit(f"{name} had no effect on {pokemon} ({before['species']}){said}")
+        return f"{pokemon} evolved: {before['species']} -> {after['species']}{said}"
+    if after["level"] <= before["level"]:
+        raise SystemExit(f"{name} did nothing to {pokemon} (level {before['level']}){said}")
+    return f"{name} on {pokemon}: level {before['level']} -> {after['level']}" + (
+        f", evolved into {after['species']}" if after["species"] != before["species"] else "") + said
+
+
 if __name__ == "__main__":
     # Self-check: python items.py STATE... [PORT]. Each state needs a Potion and a damaged party member: the
     # fixtures overworld_items.ss1 (start menu open), wild_battle_prethrow.ss1, trainer_battle_riolu.ss1.
