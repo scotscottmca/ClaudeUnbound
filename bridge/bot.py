@@ -95,7 +95,7 @@ def plan(w, goals, blocked, grass_cost=8, visit=None, limit=None):
             if not (0 <= nx < w["width"] and 0 <= ny < w["height"]) or (nx, ny) in occupied:
                 continue
             beh, col, elev = w["tile"](nx, ny)
-            jump = beh in LEDGE_DIR or (beh == W.HOP and key in ("LEFT", "RIGHT"))
+            jump = beh in LEDGE_DIR or beh == W.HOP
             if jump:
                 if beh in LEDGE_DIR and LEDGE_DIR[beh] != key:
                     continue
@@ -392,7 +392,7 @@ def landing(w, x, y, key):
     """Where KEY from (x, y) puts the player: two tiles on over a ledge or a gap, else the next tile."""
     dx, dy = DIRS[key]
     beh = w["tile"](x + dx, y + dy)[0]
-    jump = beh in LEDGE_DIR or (beh == W.HOP and key in ("LEFT", "RIGHT"))
+    jump = beh in LEDGE_DIR or beh == W.HOP
     return (x + 2 * dx, y + 2 * dy) if jump else (x + dx, y + dy)
 
 

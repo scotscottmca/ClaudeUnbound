@@ -28,10 +28,10 @@ WARP = set(range(0x60, 0x70)) | {0x71}
 # plain floor has none. Fallshore 14/14's (25,24) back to 14/3 is one: travel_to stood on it, "didn't trigger".
 ARRIVAL_ONLY = 0x00
 ITEM_BALL = 92  # object graphics id of an item on the ground (verified: Route 2 (8,28)/(17,27) match the Poke Ball sprites on screen)
-HOP = 0x7F  # Unbound: a gap you hop over sideways, LEFT/RIGHT land two tiles on (Grim Woods (7,33), (9,33))
+HOP = 0x7F  # Unbound: a gap you hop over, any direction, landing two tiles on (Grim Woods sideways; Fallshore 14/15 up/down)
 LEGEND = {"@": "you", "N": "NPC/object", "o": "item on the ground (walk_to it to pick it up)", "T": "trainer", ".": "walkable", "#": "blocked", "G": "tall grass",
           "~": "water (Surf)", "W": "waterfall", "I": "ice", "F": "forced movement", "D": "warp/door",
-          "S": "sign", ":": "walkable, but on another level (reach it via stairs or a ramp)", "^v<>": "ledge, jump in that direction", "=": "gap, hop over it left or right",
+          "S": "sign", ":": "walkable, but on another level (reach it via stairs or a ramp)", "^v<>": "ledge, jump in that direction", "=": "gap, hop over it (any direction)",
           " ": "outside the map"}
 
 
