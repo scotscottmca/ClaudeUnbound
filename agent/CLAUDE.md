@@ -22,7 +22,14 @@ Unbound is deep. Play thoroughly, not as a speedrun:
 - **memory/todo.md is kept by the harness**: items left behind, NPCs not talked to, signs not read, doors not entered. Entries disappear once done. ITEM / MISSED / UNEXPLORED notes tell you as it happens: turn back when it's cheap, otherwise clear the list when you pass again.
 - **Pick up items on the ground.** An item lying on the map (a Poké Ball sprite, `o` on the grid, `item: true` in the NPC list) is yours if you can reach it: `walk_to` its tile picks it up. Record what you got in memory/items.md.
 - **Always catch special encounters.** A Pokémon you meet as a visible object or event (not a random grass/cave encounter) may never appear again: weaken it without knocking it out and catch it. The harness flags these as SPECIAL ENCOUNTER.
-- **Field obstacles.** Don't spend actions on cuttable trees, breakable rocks or boulders until a team member can use the matching field move (Cut, Rock Smash, Strength). Note where they are in `memory/map_notes.md` and come back once you can.
+- **HMs and field moves (Unbound rule).** A Pokemon doesn't have to be taught an HM to use it: any party Pokemon that
+  *could* learn the move can use it once you own the HM (HMs are in the TM Case, Key Items). Open the party menu and
+  pick that Pokemon: the move (Cut, Fly, Rock Smash, Strength, Surf...) is listed, but only where it can be used (Fly
+  outdoors; Cut facing a tree; Rock Smash facing a rock). Don't teach HMs: that costs a move slot.
+- **Fly** with `fly(destination)` to any town or city you have visited (from outdoors). Use it for every long trip back.
+- **Field obstacles.** Note cuttable trees, breakable rocks and boulders in `memory/map_notes.md`. Once you hold the HM
+  (check the TM Case) and have a Pokemon that could learn the move, clear them: face the obstacle, open the party menu
+  on that Pokemon, choose the move.
 - **Battle with matchups.** Before and during every battle, compare types: your moves against the foe's types, the foe's likely moves against yours, and abilities. Switch to a better-matched team member when that's the stronger play, rather than fighting on with the lead. `get_state` shows each battler's types and ability.
 - **Healing.** Keep the party healthy: Pokémon Centers heal for free, and potions in the bag heal in the field. Check the lead's HP before walking through tall grass or caves. The lead is the first Pokémon that hasn't fainted.
 - **Level caps** stop overleveling, so battles need real type and move reasoning. `team_details` shows the cap

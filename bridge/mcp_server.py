@@ -600,6 +600,11 @@ def t_buy(a):
     return _menu_tool(shop.buy, a["item"], int(a.get("quantity", 1)))
 
 
+def t_fly(a):
+    import fly
+    return _menu_tool(fly.fly, a["destination"])
+
+
 def t_team_details(a):
     import stats
     n = p.read8(state_mod.PLAYER_PARTY_COUNT)
@@ -844,6 +849,10 @@ TOOLS = {
                       "swapping it with whoever is there (overworld). Verifies the new order.",
                       S({"pokemon": {"type": "string", "description": "nickname"}, "position": {"type": "integer"}},
                         ["pokemon", "position"]), True),
+    "fly": (t_fly, "Fly to a town or city you have visited, in one call, from outdoors (a town, city or route). Needs "
+            "HM02 in the TM Case and a party Pokemon that COULD learn Fly (it doesn't have to know it). Refuses a place "
+            "you haven't visited yet. Use it for any long trip back: a Center, a Mart, an earlier town, a gym.",
+            S({"destination": {"type": "string", "description": "e.g. 'Dresco Town'"}}, ["destination"]), True),
     "buy": (t_buy, "In a Poke Mart: buy QUANTITY (1-99) of ITEM in one call. Walks to the clerk, checks the item is "
             "stocked (lists what is if not) and that you can afford it, confirms, and reports the new count and money.",
             S({"item": {"type": "string"}, "quantity": {"type": "integer"}}, ["item"]), True),
