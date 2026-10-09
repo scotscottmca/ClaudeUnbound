@@ -738,19 +738,19 @@ def t_wiki_walkthrough(a):
     if unmet:
         return {"refused": "the walkthrough is a last resort, for when you are really stuck and escalation failed. "
                            "Not yet: " + "; ".join(unmet) + ".", **facts}
-    hits = wiki.search(a["query"], 3, dbfile=wiki.LR_DB)
-    if not hits:
-        return {"result": "nothing in the walkthrough matches; try other words (a place or person's name)", **facts}
-    page = json.loads((wiki.LR_PAGES / f"{wiki.slug(hits[0]['url'])}.json").read_text(encoding="utf-8"))
-    # The whole best-matching "## " section, subsections included: picking scattered paragraphs by keyword count
-    # served 800 characters of fragments instead of the page's step-by-step route (step 6238, #159).
-    terms = [t.lower() for t in re.findall(r"\w+", a["query"]) if len(t) > 2]
-    sections = re.split(r"\n(?=## )", "\n" + wiki.strip_excluded(page["text"]))
-    score = lambda sec: sum(sec.lower().count(t) for t in terms) + 5 * sum(t in sec.split("\n", 1)[0].lower() for t in terms)  # noqa: E731
-    text = max(sections, key=score).strip()[:8000]
+    # Served from the per-section index (#160): with no query, the sections about where you are (puzzle and
+    # step-by-step headings first); a query narrows or redirects it. Whole sections, never keyword fragments (#159).
+    place = state_mod.get_state(p)["map"]["name"]
+    query = (a.get("query") or "").strip()
+    secs = wiki.sections_for(None if query else place, query)
+    if not secs:
+        return {"result": f"nothing in the walkthrough about {place!r}" + (f" or {query!r}" if query else "")
+                          + "; try a query (a place, person or puzzle name)", **facts}
+    text = "\n\n".join(secs)
     watcher.forbid(os.path.dirname(LOG), text)  # memory/ may not keep anything from it
-    log({"step": steps, "walkthrough": a["query"], "reason": reason[:300], "page": hits[0]["url"], **facts})
-    return {"page": hits[0]["title"], "excerpt": text, "other_pages": [h["title"] for h in hits[1:]],
+    log({"step": steps, "walkthrough": query or f"(here: {place})", "reason": reason[:300],
+         "sections": [t.split("\n", 1)[0] for t in secs], **facts})
+    return {"sections": secs,
             "rule": "Use this to get unstuck now. Do NOT write anything from it into memory/ (the harness deletes such "
                     "lines). Record only what you then verify yourself in play, in your own words."}
 
@@ -830,12 +830,13 @@ TOOLS = {
                     S({"query": {"type": "string"}, "n": {"type": "integer"}}, ["query"]), False),
     "wiki_walkthrough": (t_wiki_walkthrough, "LAST RESORT, only when really stuck: escalation to the strategist and "
                          "the expert failed, the watchdog keeps firing and you have made no progress for a long time. Searches "
-                         "the game's walkthrough and returns the most relevant passage. The harness refuses until that is "
+                         "the game's walkthrough (indexed by section) and returns the sections about where you are (or your query). The harness refuses until that is "
                          "true and says what is missing. Nothing from it may be written to memory/: the harness deletes "
                          "such lines.",
-                         S({"query": {"type": "string", "description": "place, person or puzzle, e.g. 'Fallshore gym Lapras'"},
+                         S({"query": {"type": "string", "description": "optional: a place, person or puzzle, e.g. 'Fallshore gym "
+                                      "Lapras'. Leave it out to get the sections about where you are now."},
                             "reason": {"type": "string", "description": "what you tried, and what the strategist and the expert said"}},
-                           ["query", "reason"]), False),
+                           ["reason"]), False),
     "wiki_read": (t_wiki_read, "Read a wiki page found with wiki_search (pass its url).",
                   S({"page": {"type": "string", "description": "the url from wiki_search"}}, ["page"]), False),
     "fight": (t_fight, "In battle: use a move by name (e.g. 'Water Gun'). Opens Fight, picks the move, "

@@ -5,7 +5,7 @@ python wiki.py index                 build wiki/index.sqlite (FTS5) from the cac
 python wiki.py search "query" [N]    top N hits: url, title, snippet
 python wiki.py read URL_OR_SLUG      print a page's text
 python wiki.py crawl-lastresort      fetch walkthrough/ and gyms/ into wiki/lastresort_pages/ (kept apart)
-python wiki.py index-lastresort      build wiki/lastresort.sqlite from them
+python wiki.py index-lastresort      build wiki/lastresort.sqlite and the per-section index lastresort_sections.json
 
 The last-resort corpus (walkthrough, gyms) is separate on purpose: wiki_search/wiki_read never see it. The agent gets
 it only through the harness-gated wiki_walkthrough tool, when really stuck (user, 2026-10-09), and nothing from it
@@ -216,6 +216,69 @@ def read(url_or_slug):
     return {**page, "text": strip_excluded(page["text"])}
 
 
+LR_DIGEST = ROOT / "lastresort_sections.json"
+KEY_HEADINGS = ("step-by-step", "puzzle", "optimal", "path", "how to", "solution")
+
+
+def digest():
+    """Index the last-resort pages by section (#160): each heading's text with the in-game place names (map
+    sections) it mentions, so the gated tool can serve the sections about where the player is, without a query."""
+    names = json.load(open(Path(__file__).with_name("names.json"), encoding="utf-8"))["mapsecs"].values()
+    places = sorted({v for v in names if len(v) > 3}, key=len, reverse=True)
+    pages = sorted(LR_PAGES.glob("*.json"))
+    out = []
+    for f in pages:
+        page = json.loads(f.read_text(encoding="utf-8"))
+        path, buf = [], []
+
+        def flush():
+            text = "\n".join(buf).strip()
+            if not text:
+                return
+            head = " > ".join(path) or page["title"]
+            low_head, low, title = head.lower(), text.lower(), page["title"].lower()
+            out.append({"page": page["title"], "url": page["url"], "heading": head, "text": text,
+                        "places": [pl for pl in places if pl.lower() in low_head or pl.lower() in low],
+                        "head_places": [pl for pl in places if pl.lower() in low_head or pl.lower() in title],
+                        "key": any(k in low_head for k in KEY_HEADINGS)})
+
+        for line in strip_excluded(page["text"]).splitlines():
+            m = re.match(r"(#{1,6}) (.*)", line)
+            if m:
+                flush()
+                depth = len(m.group(1))
+                path = path[:max(0, depth - 2)] + [m.group(2).strip()]  # "## X" starts a path, "### Y" nests under it
+                buf = []
+                continue
+            buf.append(line)
+        flush()
+    LR_DIGEST.write_text(json.dumps(out, ensure_ascii=False), encoding="utf-8")
+    print(f"{len(out)} sections from {len(pages)} pages into {LR_DIGEST}")
+
+
+def sections_for(place=None, query="", n=4, budget=8000):
+    """The most relevant walkthrough sections for PLACE (a map section name) and/or QUERY: sections whose heading or
+    page title names the place first, puzzle/step-by-step headings first among them, then query-term hits."""
+    secs = [s for s in json.loads(LR_DIGEST.read_text(encoding="utf-8")) if len(s["text"]) >= 300]  # not TOC scraps
+    terms = [t.lower() for t in re.findall(r"\w+", query) if len(t) > 2]
+    core = re.sub(r"\s+(City|Town|Village|Island|Isle)$", "", place or "").lower()  # "Fallshore Gym" is about Fallshore City
+
+    def score(s):
+        named = core and (core in s["heading"].lower() or core in s["page"].lower())
+        here = place and (place in s["places"] or named)
+        return ((50 if named or (place and place in s["head_places"]) else 10 if here else 0)
+                + (40 if s["key"] and (here or not place) else 0)
+                + sum(s["text"].lower().count(t) + 5 * (t in s["heading"].lower()) for t in terms))
+
+    out, used = [], 0
+    for s in sorted((s for s in secs if score(s) > 0), key=score, reverse=True)[:n]:
+        chunk = f"[{s['page']} > {s['heading']}]\n{s['text']}"[:budget - used]
+        if chunk:
+            out.append(chunk)
+            used += len(chunk)
+    return out
+
+
 def _selftest():
     assert strip_excluded("## Trainers\nA\n## Missions\nsecret\n### Sub\nmore\n## Vendors\nB") == \
         "## Trainers\nA\n## Vendors\nB"
@@ -245,6 +308,7 @@ if __name__ == "__main__":
         crawl(LAST_RESORT_SECTIONS, LR_PAGES)
     elif cmd == "index-lastresort":
         index(LAST_RESORT_SECTIONS, LR_PAGES, LR_DB)
+        digest()
     elif cmd == "search" and args:
         for h in search(args[0], int(args[1]) if len(args) > 1 else 5):
             print(f"{h['url']}\n  {h['title']} [{h['section']}]\n  {h['snippet']}\n")
