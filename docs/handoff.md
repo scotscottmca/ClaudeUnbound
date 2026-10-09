@@ -44,6 +44,9 @@ and "Level Caps"):
   `pc_withdraw` / `pc_swap` (Center PC; never selects Release).
 - **#109 `buy`, verified live:** stock and money checks; the bonus Premier Ball for 10 balls.
 - **#164:** 33 garbled item names fixed (Unbound stores a pointer for long names).
+- **#165 `fly`, verified live:** flies to visited towns (Dresco and back). The agent knows Unbound's HM rule: any Pokemon
+  that could learn an HM can use it from the party menu, without being taught. The full1 save holds HM01 Cut, HM02 Fly
+  and HM06 Rock Smash.
 - **agent/CLAUDE.md:** the team tools, plus the Expert policy. Read matchups; losing is information, so record the
   opponent and pick a fix (train to the cap, catch a counter, PC swap, EV training, held items); EVs, natures,
   held items, the lead, shopping.
