@@ -105,6 +105,9 @@ h2 .note { text-transform: none; letter-spacing: 0; font-weight: 400; color: var
 .bar i { display: block; height: 100%; transition: width .5s, background .5s; }
 .bar.xp { height: 3px; } .bar.xp i { background: var(--main); }
 .hp { font: 12.5px var(--mono); color: var(--dim); text-align: right; white-space: nowrap; }
+.sts { display: grid; grid-template-columns: repeat(6, minmax(0, 1fr)); gap: 2px; font: 11px var(--mono); text-align: center; }
+.sts span { border-radius: 3px; } .sts i { display: block; font-style: normal; font-size: 9px; color: var(--dim); }
+.sts .up { animation: glow 3s ease-out; color: var(--good); }  /* stat or its EVs rose since the last poll */
 .st { font: 10px var(--mono); padding: 1px 5px; border-radius: 3px; background: #3a2a1e; color: var(--opus); white-space: nowrap; }
 
 /* memory */
@@ -288,6 +291,7 @@ function hpbar(hp) {
   return `<div class="bar"><i style="width:${(f * 100).toFixed(0)}%;background:var(${col})"></i></div>`;
 }
 let partyT = 0, party = null, stats = null;
+const STATN = ["HP", "Atk", "Def", "SpA", "SpD", "Spe"];  // server.SHOWN order
 const dur = s => s >= 3600 ? `${Math.floor(s / 3600)}h ${String(Math.floor(s / 60) % 60).padStart(2, "0")}m` : `${Math.floor(s / 60)}m`;
 function drawStats() {
   const s = party || {}, r = stats;
@@ -332,9 +336,11 @@ function onParty(s) {
     const it = p.item ? `<span title="held item">${esc(p.item)}</span>` : "";
     const st = p.status ? `<span class="st">${esc(p.status)}</span>` : "";
     const pt = p.partner ? `<span class="st partner">partner</span>` : "";  // an NPC partner's Pokemon, battle only
+    const evt = p.evs ? p.evs.reduce((a, b) => a + b, 0) : 0;
+    const sts = p.stats ? `<div class="sts">${p.stats.map((v, k) => `<span${(p.up || []).includes(k) ? ` class="up"` : ""} title="${STATN[k]} ${v}: ${p.evs[k]} EVs (total ${evt}/510)"><i>${STATN[k]}</i>${v}</span>`).join("")}</div>` : "";
     html += `<div class="mon${i === lead ? " lead" : ""}${p.partner ? " is-partner" : ""}">` +
       `<div class="l1"><span class="who" title="${esc(p.name)} ${esc(sp)}"><span class="nm">${esc(p.name)}</span> <span class="sp">${p.species !== p.name ? sp : (p.level ? "Lv" + p.level : "")}</span></span><span class="hp">${esc(p.hp)}</span></div>` +
-      `${hpbar(p.hp)}${xp}<div class="l3"><span class="it">${st}${pt}${it}</span><span class="xpt">${togo}</span></div></div>`;
+      `${hpbar(p.hp)}${xp}${sts}<div class="l3"><span class="it">${st}${pt}${it}</span><span class="xpt">${togo}</span></div></div>`;
   });
   $("mons").innerHTML = html || `<div style="color:var(--faint);padding:8px 0">no party data yet</div>`;
 }

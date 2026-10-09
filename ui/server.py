@@ -51,6 +51,7 @@ class Hub:
         self.ring = deque(maxlen=400)  # recent feed events, replayed to a new page
         self.clients = []
         self.state = {"mode": mode, "graph": {"nodes": [], "edges": []}, "party": None, "counts": {}, "stats": None}
+        self.prev = {}  # (nickname, species) -> (stats, evs) of the last party snapshot, for stat_ups
 
     def emit(self, ev, keep=True):
         data = json.dumps(scrub(ev))
@@ -62,6 +63,8 @@ class Hub:
 
     def set(self, key, value):
         self.state[key] = value = scrub(value)
+        if key == "party" and value:
+            stat_ups(self.prev, value.get("party") or [])
         self.emit({"k": key, key: value}, keep=False)
 
     def subscribe(self):
@@ -435,10 +438,31 @@ def exp_for(rate, n):
 
 BASE_STATS = 0x099E0C9C  # ROM, 0x1C per species; growth rate +0x13 (docs/addresses.md)
 DEX_OWNED = 0x38D  # SaveBlock1 offset: 0x7D bytes, bit n-1 = national dex n (docs/addresses.md)
+# Party stats u16 x6 at +0x58 and EVs u8 x6 at +0x38, in the order HP Atk Def Spe SpA SpD (bridge/stats.py, #156);
+# the page shows them as HP Atk Def SpA SpD Spe.
+SHOWN = (0, 1, 2, 4, 5, 3)
+
+
+def stat_ups(prev, party):
+    """Mark on each member ("up": stat indexes) the stats whose value or EVs rose since the last snapshot. Members are
+    matched by nickname and species, so a reorder or an NPC partner's team flashes nothing. PREV becomes this one."""
+    cur = {}
+    for mon in party:
+        if "stats" not in mon:  # log.jsonl snapshots carry no stats
+            continue
+        key = (mon["name"], mon.get("species"))
+        old = prev.get(key)
+        if old:
+            up = [i for i in range(6) if mon["stats"][i] > old[0][i] or mon["evs"][i] > old[1][i]]
+            if up:
+                mon["up"] = up
+        cur[key] = (mon["stats"], mon["evs"])
+    prev.clear()
+    prev.update(cur)
 
 
 def extras(p, s, rates, state):
-    """Exp progress per member, play time and Pokedex owned count: a few more reads."""
+    """Exp progress and stats/EVs per member, play time and Pokedex owned count: a few more reads."""
     n = len(s["party"])
     raw = p.range(state.PLAYER_PARTY, 100 * n) if n else b""
     for i, mon in enumerate(s["party"]):
@@ -448,6 +472,8 @@ def extras(p, s, rates, state):
             rates[sp] = p.read8(BASE_STATS + 0x1C * sp + 0x13)
         lo, hi = exp_for(rates[sp], m[0x54]), exp_for(rates[sp], m[0x54] + 1)
         mon["exp"] = [exp - lo, hi - lo] if lo <= exp <= hi and m[0x54] < 100 else None  # None: curve unproven
+        mon["stats"] = [int.from_bytes(m[0x58 + 2 * k:0x5A + 2 * k], "little") for k in SHOWN]
+        mon["evs"] = [m[0x38 + k] for k in SHOWN]
     t = p.range(p.read32(state.SB2_PTR) + 0x0E, 3)
     s["playtime"] = [t[0] | t[1] << 8, t[2]]
     s["dex_owned"] = sum(bin(b).count("1") for b in p.range(p.read32(state.SB1_PTR) + DEX_OWNED, 0x7D))

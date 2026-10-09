@@ -25,12 +25,17 @@ SEED = {
     "npcs.md": "# NPCs\n\n- Prof. Log (Frozen Heights): gave the Pokedex.\n- Route 2 healer (53,13).\n",
     "learnings.md": "# Learnings\n\n- Check the bag before leaving a shop town: 0 balls means lost catches.\n",
 }
-PARTY = [
-    {"name": "Ion", "species": "Metang", "level": 25, "hp": [70, 70], "status": None, "item": None, "exp": [300, 1393]},
-    {"name": "Makuhita", "species": "Makuhita", "level": 23, "hp": [73, 73], "status": None, "item": "Black Belt", "exp": [500, 1388]},
-    {"name": "Batty", "species": "Zubat", "level": 21, "hp": [55, 55], "status": None, "item": None, "exp": [700, 1662]},
-    {"name": "Frost", "species": "Swinub", "level": 18, "hp": [48, 48], "status": None, "item": "Never-Melt Ice", "exp": [900, 1333]},
-    {"name": "Pip", "species": "Patrat", "level": 17, "hp": [44, 44], "status": None, "item": None, "exp": [400, 1018]},
+PARTY = [  # stats/evs in the page's order: HP Atk Def SpA SpD Spe (server.SHOWN)
+    {"name": "Ion", "species": "Metang", "level": 25, "hp": [70, 70], "status": None, "item": None, "exp": [300, 1393],
+     "stats": [70, 55, 66, 36, 44, 37], "evs": [4, 12, 30, 0, 2, 8]},
+    {"name": "Makuhita", "species": "Makuhita", "level": 23, "hp": [73, 73], "status": None, "item": "Black Belt", "exp": [500, 1388],
+     "stats": [73, 44, 24, 19, 24, 20], "evs": [40, 6, 0, 0, 0, 2]},
+    {"name": "Batty", "species": "Zubat", "level": 21, "hp": [55, 55], "status": None, "item": None, "exp": [700, 1662],
+     "stats": [55, 27, 24, 20, 26, 40], "evs": [0, 2, 0, 0, 0, 22]},
+    {"name": "Frost", "species": "Swinub", "level": 18, "hp": [48, 48], "status": None, "item": "Never-Melt Ice", "exp": [900, 1333],
+     "stats": [48, 29, 22, 18, 18, 30], "evs": [0, 10, 0, 0, 0, 0]},
+    {"name": "Pip", "species": "Patrat", "level": 17, "hp": [44, 44], "status": None, "item": None, "exp": [400, 1018],
+     "stats": [44, 26, 18, 16, 18, 22], "evs": [0, 8, 0, 0, 0, 0]},
 ]
 
 
@@ -103,11 +108,13 @@ class Mock:
     def gain(self, who, exp):
         p = self.party[who]
         p["exp"][0] += exp
+        p["evs"][1] += 2  # the beaten foe's EV yield: the page flashes Atk
         if p["exp"][0] >= p["exp"][1]:
             p["exp"][0] -= p["exp"][1]
             p["level"] += 1
             p["hp"][1] += 3
             p["hp"][0] += 3
+            p["stats"] = [p["hp"][1]] + [v + 2 for v in p["stats"][1:]]
 
     # -- the scripted minute
     def script(self):

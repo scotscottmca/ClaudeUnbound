@@ -51,4 +51,16 @@ hub = s.Hub("live")
 hub.clients.append(type("Q", (), {"put": lambda self, d: got.append(d)})())
 hub.emit({"k": "tool", "text": r"read D:\ClaudeUnboundRuns\full1\memory\team.md"})
 assert "ClaudeUnboundRuns" not in got[0] and "team.md" in got[0], got
+
+# stat/EV-up flash (#167): only a rise marks a stat, once; matched by nickname+species, so a reorder or a new member doesn't
+mon = lambda n, st, ev: {"name": n, "species": n, "stats": st, "evs": ev}  # noqa: E731
+hub = s.Hub("live")
+hub.set("party", {"party": [mon("Ion", [70] * 6, [0] * 6), mon("Pip", [44] * 6, [0] * 6)]})
+assert not any("up" in m for m in hub.state["party"]["party"])
+hub.set("party", {"party": [mon("Pip", [44] * 6, [0] * 6), mon("Ion", [70, 71, 70, 70, 70, 69], [0, 0, 0, 0, 0, 2]),
+                            mon("Zed", [9] * 6, [0] * 6)]})
+assert [m.get("up") for m in hub.state["party"]["party"]] == [None, [1, 5], None], hub.state["party"]
+hub.set("party", {"party": [mon("Pip", [44] * 6, [0] * 6), mon("Ion", [70, 71, 70, 70, 70, 69], [0, 0, 0, 0, 0, 2])]})
+assert not any("up" in m for m in hub.state["party"]["party"])
+hub.set("party", {"src": "log", "party": [{"name": "Ion", "hp": "70/70"}]})  # log snapshots carry no stats
 print("ok")
