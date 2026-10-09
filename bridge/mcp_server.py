@@ -557,6 +557,29 @@ def t_walk_to(a):
     return run_bot(walk)
 
 
+def _menu_tool(fn, *args):
+    """A menu tool that returns a sentence (or refuses with SystemExit): the sentence is the result."""
+    try:
+        return {"result": fn(p, *args)}
+    except SystemExit as e:
+        return {"result": str(e)}
+
+
+def t_give_item(a):
+    import party_menu
+    return _menu_tool(party_menu.give_item, a["item"], a["pokemon"], bool(a.get("replace")))
+
+
+def t_take_item(a):
+    import party_menu
+    return _menu_tool(party_menu.take_item, a["pokemon"])
+
+
+def t_reorder_party(a):
+    import party_menu
+    return _menu_tool(party_menu.reorder_party, a["pokemon"], a["position"])
+
+
 def t_team_details(a):
     import stats
     n = p.read8(state_mod.PLAYER_PARTY_COUNT)
@@ -789,6 +812,18 @@ TOOLS = {
                 "dialog, or when blocked.",
                 S({"x": {"type": "integer"}, "y": {"type": "integer"}, "max_steps": {"type": "integer"}},
                   ["x", "y"]), True),
+    "give_item": (t_give_item, "Give a party member an item from the bag (Items pocket) to hold, in one call (overworld). "
+                  "If it already holds something it refuses, unless replace=true (the old item goes back to the bag). "
+                  "Held items matter: type boosters (Mystic Water, Miracle Seed...), Eviolite, Leftovers, Choice items, "
+                  "the Macho Brace (doubles EVs gained). Verifies the result.",
+                  S({"item": {"type": "string"}, "pokemon": {"type": "string", "description": "nickname"},
+                     "replace": {"type": "boolean"}}, ["item", "pokemon"]), True),
+    "take_item": (t_take_item, "Take a party member's held item back into the bag (overworld). Verifies the result.",
+                  S({"pokemon": {"type": "string", "description": "nickname"}}, ["pokemon"]), True),
+    "reorder_party": (t_reorder_party, "Move a party member to a position (1 = the lead, who starts every battle) by "
+                      "swapping it with whoever is there (overworld). Verifies the new order.",
+                      S({"pokemon": {"type": "string", "description": "nickname"}, "position": {"type": "integer"}},
+                        ["pokemon", "position"]), True),
     "team_details": (t_team_details, "Your party's training detail: nature (which stat it raises/lowers), real stats, "
                      "base stats, EVs per stat with the total used of 510, and IVs. Use it to plan EV training (in battle, "
                      "get_state shows each foe's ev_yield), choose leads and held items, and compare team members.",

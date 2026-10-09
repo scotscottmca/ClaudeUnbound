@@ -123,14 +123,15 @@ PARTY_MENU = 0x0203B0A0  # gPartyMenu: +8 menuType/layout bits, +9 cursor slot (
 CB2_BATTLE_PARTY = 0x0811EBA1  # the party screen inside battle (forced or chosen switch)
 
 
-def party_cursor_to(p, target):
+def party_cursor_to(p, target, which=9):
     """Move the party-screen cursor to slot TARGET. Double layout: two columns (0 2 4 | 1 3 5), Cancel 7
-    under the right; single layout: slot 0 on the left, 1-5 down the right."""
+    under the right; single layout: slot 0 on the left, 1-5 down the right. WHICH: gPartyMenu's cursor byte, +9
+    slotId, or +0xA slotId2 for the second pick (the target of a Switch, #161)."""
     for _ in range(12):
-        b = p.range(PARTY_MENU, 10)
+        b = p.range(PARTY_MENU, 11)
         # Unbound's battle party screen is always the two-column grid (0 1 / 2 3 / 4 5, Cancel 7), even when the
         # layout byte says single: walked on a single trainer battle with five Pokemon (slots 2-4 unreachable before).
-        slot, double = b[9], True
+        slot, double = b[which], True
         if slot == target:
             return True
         if double:
@@ -140,7 +141,7 @@ def party_cursor_to(p, target):
             key = "LEFT" if target == 0 else "RIGHT" if slot == 0 else ("DOWN" if target > slot else "UP")
         p.press(key, 4)
         p.step(8)
-    return p.read8(PARTY_MENU + 9) == target
+    return p.read8(PARTY_MENU + which) == target
 
 
 def _party_slot(p, name):
