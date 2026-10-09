@@ -16,6 +16,7 @@ Self-check: python watcher.py (fake claude, temp dirs).
 """
 import json
 import os
+import re
 import shutil
 import subprocess
 import sys
@@ -258,6 +259,51 @@ def archive_lost(mem, before):
     return sum(map(len, lost.values()))
 
 
+FORBIDDEN = "walkthrough_seen.txt"  # in the workspace, outside memory/: every walkthrough excerpt the agent was shown
+SHINGLE = 5  # a memory line sharing a run of this many words with an excerpt counts as copied from it
+
+
+def shingles(text):
+    w = re.findall(r"[a-z0-9]+", text.lower())
+    return {" ".join(w[i:i + SHINGLE]) for i in range(len(w) - SHINGLE + 1)}
+
+
+def forbid(ws, text):
+    """Record a walkthrough excerpt shown to the agent: guard() deletes memory lines copied from it (user rule:
+    nothing gleaned from the walkthrough may be written to memory)."""
+    with open(os.path.join(ws, FORBIDDEN), "a", encoding="utf-8") as f:
+        f.write(text + "\n\n")
+
+
+def purge_forbidden(ws, old, step):
+    """Delete lines newly written to memory/ (not in the OLD snapshot) that copy a walkthrough excerpt; archive.md's
+    new tail too. Returns the number deleted. ponytail: catches copying, not paraphrase; the agent is told the rule."""
+    src = os.path.join(ws, FORBIDDEN)
+    if not os.path.exists(src):
+        return 0
+    if getattr(RT, "forbidden_mtime", None) != os.path.getmtime(src):
+        RT.forbidden, RT.forbidden_mtime = shingles(open(src, encoding="utf-8").read()), os.path.getmtime(src)
+    mem, gone = os.path.join(ws, "memory"), 0
+    for name in sorted(os.listdir(mem)):
+        if not name.endswith(".md") or name in ("operator.md", "todo.md"):
+            continue
+        path = os.path.join(mem, name)
+        text = open(path, encoding="utf-8", errors="replace").read()
+        before = set((old or {}).get(name, "").splitlines()) if name != "archive.md" else \
+            set(text[:getattr(RT, "archive_len", len(text))].splitlines())
+        keep = [ln for ln in text.splitlines() if ln in before or not (shingles(ln) & RT.forbidden)]
+        if len(keep) < len(text.splitlines()):
+            gone += len(text.splitlines()) - len(keep)
+            with open(path, "w", encoding="utf-8") as f:
+                f.write("\n".join(keep) + ("\n" if text.endswith("\n") else ""))
+    arch = os.path.join(mem, "archive.md")
+    RT.archive_len = os.path.getsize(arch) if os.path.exists(arch) else 0
+    if gone:
+        RT.inbox.append(("memory", step, f"deleted {gone} line(s) copied from the walkthrough. Nothing from it may be "
+                         "written to memory/ (operator rule): record only what you verify yourself in play, in your own words."))
+    return gone
+
+
 def guard(ws, step=0):
     """Main thread, after each action: nothing the agent deletes from memory/ is lost, the operator's hints stay
     pinned, and an oversized file gets one MEMORY note per NAG_EVERY actions.
@@ -272,6 +318,7 @@ def guard(ws, step=0):
                 open(dst, "w", encoding="utf-8").write(want)
         if getattr(RT, "mem", None) is not None:
             archive_lost(mem, RT.mem)
+        purge_forbidden(ws, getattr(RT, "mem", None), step)  # before the snapshot: a deleted copy is never archived
         RT.mem = now = snapshot(mem)
         nagged = RT.__dict__.setdefault("nagged", {})
         for name, text in now.items():

@@ -20,6 +20,7 @@ import importlib
 import io
 import json
 import os
+import re
 import shutil
 import struct
 import sys
@@ -636,6 +637,85 @@ def t_wiki_search(a):
     return wiki.search(a["query"], a.get("n", 5))
 
 
+# Last resort (user, 2026-10-09): the walkthrough may be read only when really stuck and escalation failed, and
+# nothing from it may go into memory/ (watcher.guard deletes copied lines). The gate below is what "really stuck" means.
+STUCK_ACTIONS, STUCK_WATCHDOGS = 150, 2
+
+
+def stuck_evidence():
+    """(unmet conditions, facts) for the walkthrough gate: no progress (new map, badge, or a new operator hint) for STUCK_ACTIONS actions,
+    STUCK_WATCHDOGS watchdog notes since, and both the strategist and the expert consulted since (transcripts)."""
+    ws = os.path.dirname(LOG)
+    progress_step, progress_t = 0, 0.0
+    if os.path.exists(tracker.path):
+        for line in open(tracker.path, encoding="utf-8"):
+            e = json.loads(line)
+            if e["kind"] in ("map", "badge"):
+                progress_step, progress_t = e.get("step") or 0, e.get("t") or 0.0
+    hint = os.path.join(ws, "operator.md")  # a new operator hint is a fresh start: try it before the walkthrough
+    if os.path.exists(hint) and os.path.getmtime(hint) > progress_t:
+        progress_t = os.path.getmtime(hint)
+        with open(LOG, encoding="utf-8", errors="replace") as f:
+            for line in f:
+                m = re.match(r'\{"t": ([0-9.]+), "step": (\d+)', line)
+                if m and float(m.group(1)) >= progress_t:
+                    progress_step = int(m.group(2))
+                    break
+            else:
+                progress_step = steps
+    dogs = 0
+    with open(LOG, encoding="utf-8", errors="replace") as f:
+        for line in f:
+            if "WATCHDOG" in line:
+                try:
+                    e = json.loads(line)
+                except ValueError:
+                    continue
+                if (e.get("step") or 0) > progress_step and any(n.startswith("WATCHDOG") for n in e.get("harness") or []):
+                    dogs += 1
+    asked = set()
+    since = time.strftime("%Y-%m-%dT%H:%M:%S", time.gmtime(progress_t))
+    for f in glob.glob(os.path.join(ws, "transcripts", "*.jsonl")):
+        if os.path.getmtime(f) < progress_t:
+            continue
+        for line in open(f, encoding="utf-8", errors="replace"):
+            if '"name":"Agent"' not in line or '"subagent_type"' not in line:
+                continue
+            m = re.search(r'"timestamp":"([^"]+)"', line)
+            if m and m.group(1) >= since:
+                asked |= {k for k in ("strategist", "expert") if f'"subagent_type":"{k}"' in line}
+    facts = {"actions_since_progress": steps - progress_step, "watchdogs_since_progress": dogs,
+             "consulted_since_progress": sorted(asked)}
+    unmet = ([f"{STUCK_ACTIONS} actions without progress (a new map or a badge): {steps - progress_step} so far"]
+             if steps - progress_step < STUCK_ACTIONS else []) + \
+            ([f"{STUCK_WATCHDOGS} WATCHDOG notes since your last progress: {dogs} so far"] if dogs < STUCK_WATCHDOGS else []) + \
+            [f"ask the {k} subagent (with your notes) first" for k in ("strategist", "expert") if k not in asked]
+    return unmet, facts
+
+
+def t_wiki_walkthrough(a):
+    reason = (a.get("reason") or "").strip()
+    unmet, facts = stuck_evidence()
+    if len(reason) < 40:
+        unmet.append("say in 'reason' what you tried, and what the strategist and the expert said")
+    if unmet:
+        return {"refused": "the walkthrough is a last resort, for when you are really stuck and escalation failed. "
+                           "Not yet: " + "; ".join(unmet) + ".", **facts}
+    hits = wiki.search(a["query"], 3, dbfile=wiki.LR_DB)
+    if not hits:
+        return {"result": "nothing in the walkthrough matches; try other words (a place or person's name)", **facts}
+    page = json.loads((wiki.LR_PAGES / f"{wiki.slug(hits[0]['url'])}.json").read_text(encoding="utf-8"))
+    terms = [t.lower() for t in re.findall(r"\w+", a["query"]) if len(t) > 2]
+    paras = [b for b in wiki.strip_excluded(page["text"]).split("\n\n") if b.strip()]
+    best = sorted(range(len(paras)), key=lambda i: -sum(paras[i].lower().count(t) for t in terms))[:4]
+    text = "\n\n".join(paras[i] for i in sorted(best))[:4000]
+    watcher.forbid(os.path.dirname(LOG), text)  # memory/ may not keep anything from it
+    log({"step": steps, "walkthrough": a["query"], "reason": reason[:300], "page": hits[0]["url"], **facts})
+    return {"page": hits[0]["title"], "excerpt": text, "other_pages": [h["title"] for h in hits[1:]],
+            "rule": "Use this to get unstuck now. Do NOT write anything from it into memory/ (the harness deletes such "
+                    "lines). Record only what you then verify yourself in play, in your own words."}
+
+
 def t_wiki_read(a):
     page = a.get("page") or a.get("url") or a.get("slug")  # the agent reaches for "url" (search returns urls)
     if not page:
@@ -696,6 +776,14 @@ TOOLS = {
                     "them, types, abilities, evolutions, moves), items and locations (towns, routes, their items, "
                     "trainers, wild Pokémon). No walkthrough or missions: work those out yourself.",
                     S({"query": {"type": "string"}, "n": {"type": "integer"}}, ["query"]), False),
+    "wiki_walkthrough": (t_wiki_walkthrough, "LAST RESORT, only when really stuck: escalation to the strategist and "
+                         "the expert failed, the watchdog keeps firing and you have made no progress for a long time. Searches "
+                         "the game's walkthrough and returns the most relevant passage. The harness refuses until that is "
+                         "true and says what is missing. Nothing from it may be written to memory/: the harness deletes "
+                         "such lines.",
+                         S({"query": {"type": "string", "description": "place, person or puzzle, e.g. 'Fallshore gym Lapras'"},
+                            "reason": {"type": "string", "description": "what you tried, and what the strategist and the expert said"}},
+                           ["query", "reason"]), False),
     "wiki_read": (t_wiki_read, "Read a wiki page found with wiki_search (pass its url).",
                   S({"page": {"type": "string", "description": "the url from wiki_search"}}, ["page"]), False),
     "fight": (t_fight, "In battle: use a move by name (e.g. 'Water Gun'). Opens Fight, picks the move, "

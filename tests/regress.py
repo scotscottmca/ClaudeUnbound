@@ -209,6 +209,14 @@ def memory_guard():
     assert len(notes) == 1 and notes[0].startswith("MEMORY: team.md is"), notes
     watcher.guard(ws, 3)
     assert watcher.drain() == [] and watcher.guard(ws, 2 + watcher.NAG_EVERY) is None and len(watcher.drain()) == 1
+    # Walkthrough excerpts (last resort, #153): a memory line copied from one is deleted, never archived; own notes stay.
+    watcher.forbid(ws, "Ride the Lapras on the north pad, then hop the lily pads east to reach the leader.")
+    open(os.path.join(mem, "objectives.md"), "w").write("- ride the Lapras on the north pad then east\n- tested: UP from (4,26) hops\n")
+    watcher.guard(ws, 100)
+    kept = open(os.path.join(mem, "objectives.md")).read()
+    assert "Lapras" not in kept and "tested: UP" in kept, kept
+    assert "Lapras on the north" not in open(os.path.join(mem, "archive.md")).read()
+    assert any(n.startswith("MEMORY: deleted 1 line(s) copied from the walkthrough") for n in watcher.drain())
     watcher.RT.mem = None
 
 

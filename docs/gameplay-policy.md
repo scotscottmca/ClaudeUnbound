@@ -44,6 +44,7 @@ How Claude should play Unbound. Unbound is very in-depth, so the goal is a thoro
   - [Items](https://unboundwiki.com/items/): every item;
   - [Locations](https://unboundwiki.com/locations/): towns, cities and other places.
 - **No walkthrough or mission pages.** Claude works out the story, routes and missions from the game itself (NPCs, signs, notice boards) and its own memory.
+- **Exception, last resort (user, 2026-10-09):** when the agent is really stuck and escalation (strategist, expert) can't fix it, it may read the walkthrough/gyms pages through `wiki_walkthrough`. The harness gates it (150 actions without a new map, badge or operator hint; 2+ watchdog notes; strategist and expert both consulted since; a stated reason) and logs every use. **Nothing gleaned from it may be written to memory:** the harness deletes memory lines that copy an excerpt it was shown.
 - The three sections are indexed into a local searchable corpus that Claude queries on demand. It is not loaded into memory wholesale.
 
 ## Items

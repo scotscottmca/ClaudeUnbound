@@ -4,6 +4,12 @@ python wiki.py crawl                 fetch every sitemap page into wiki/pages/ (
 python wiki.py index                 build wiki/index.sqlite (FTS5) from the cached pages
 python wiki.py search "query" [N]    top N hits: url, title, snippet
 python wiki.py read URL_OR_SLUG      print a page's text
+python wiki.py crawl-lastresort      fetch walkthrough/ and gyms/ into wiki/lastresort_pages/ (kept apart)
+python wiki.py index-lastresort      build wiki/lastresort.sqlite from them
+
+The last-resort corpus (walkthrough, gyms) is separate on purpose: wiki_search/wiki_read never see it. The agent gets
+it only through the harness-gated wiki_walkthrough tool, when really stuck (user, 2026-10-09), and nothing from it
+may be written to memory (watcher.guard deletes lines copied from it).
 """
 import json
 import re
@@ -22,6 +28,9 @@ UA = "ClaudeUnbound-wiki-indexer/1.0 (personal research harness)"
 DELAY = 1.0
 # Reference data only. Walkthrough, missions, gyms etc. are deliberately excluded: the agent works out the story itself.
 ALLOWED_SECTIONS = {"pokemon", "items", "locations"}
+LAST_RESORT_SECTIONS = {"walkthrough", "gyms"}
+LR_PAGES = ROOT / "lastresort_pages"
+LR_DB = ROOT / "lastresort.sqlite"
 
 BLOCK = {"p", "div", "h1", "h2", "h3", "h4", "h5", "h6", "li", "ul", "ol", "table", "br", "section", "blockquote", "dl", "dt", "dd"}
 SKIP = {"script", "style", "noscript", "form", "svg", "button"}
@@ -120,19 +129,19 @@ def extract(url, html):
     return {"url": url, "title": title, "section": section(url), "text": p.text()}
 
 
-def sitemap_urls():
+def sitemap_urls(sections=ALLOWED_SECTIONS):
     locs = lambda xml: re.findall(r"<loc>\s*([^<\s]+)\s*</loc>", xml)
     urls = []
     for sm in locs(get(SITE + "sitemap_index.xml")):
         time.sleep(DELAY)
         urls += locs(get(sm))
-    return [u for u in dict.fromkeys(urls) if section(u) in ALLOWED_SECTIONS]
+    return [u for u in dict.fromkeys(urls) if section(u) in sections]
 
 
-def crawl():
-    PAGES.mkdir(parents=True, exist_ok=True)
-    urls = sitemap_urls()
-    todo = [u for u in urls if not (PAGES / f"{slug(u)}.json").exists()]
+def crawl(sections=ALLOWED_SECTIONS, pages=PAGES):
+    pages.mkdir(parents=True, exist_ok=True)
+    urls = sitemap_urls(sections)
+    todo = [u for u in urls if not (pages / f"{slug(u)}.json").exists()]
     print(f"{len(urls)} urls, {len(urls) - len(todo)} cached, {len(todo)} to fetch", flush=True)
     failed = []
     for i, url in enumerate(todo, 1):
@@ -143,7 +152,7 @@ def crawl():
             failed.append(url)
             print(f"[{i}/{len(todo)}] FAIL {url}: {e}", flush=True)
             continue
-        (PAGES / f"{slug(url)}.json").write_text(json.dumps(page, ensure_ascii=False), encoding="utf-8")
+        (pages / f"{slug(url)}.json").write_text(json.dumps(page, ensure_ascii=False), encoding="utf-8")
         print(f"[{i}/{len(todo)}] {url} ({len(page['text'])} chars)", flush=True)
     print(f"done: {len(todo) - len(failed)} fetched, {len(failed)} failed", flush=True)
     for u in failed:
@@ -164,18 +173,18 @@ def strip_excluded(text):
     return "\n".join(out)
 
 
-def index():
-    DB.unlink(missing_ok=True)
-    db = sqlite3.connect(DB)
+def index(sections=ALLOWED_SECTIONS, pages=PAGES, dbfile=DB):
+    dbfile.unlink(missing_ok=True)
+    db = sqlite3.connect(dbfile)
     db.execute("CREATE VIRTUAL TABLE pages USING fts5(title, section UNINDEXED, url UNINDEXED, text, tokenize='unicode61 remove_diacritics 2')")
-    rows = [json.loads(f.read_text(encoding="utf-8")) for f in PAGES.glob("*.json")]
-    rows = [{**r, "text": strip_excluded(r["text"])} for r in rows if r["section"] in ALLOWED_SECTIONS]
+    rows = [json.loads(f.read_text(encoding="utf-8")) for f in pages.glob("*.json")]
+    rows = [{**r, "text": strip_excluded(r["text"])} for r in rows if r["section"] in sections]
     db.executemany("INSERT INTO pages VALUES (:title, :section, :url, :text)", rows)
     db.commit()
-    print(f"indexed {len(rows)} pages into {DB}")
+    print(f"indexed {len(rows)} pages into {dbfile}")
 
 
-def search(query, n=5):
+def search(query, n=5, dbfile=DB):
     """Top n pages for a free-text query: [{url, title, section, snippet}]. Title matches weigh 10x."""
     terms = re.findall(r"\w+", query)
     if not terms:
@@ -183,7 +192,7 @@ def search(query, n=5):
     # Pages containing every term first, then any term; each tier ranked by bm25.
     # ponytail: no phrase/prefix syntax; add if queries need it
     quoted = [f'"{t}"' for t in terms]
-    db = sqlite3.connect(DB)
+    db = sqlite3.connect(dbfile)
     hits = {}
     for fts in (" AND ".join(quoted), " OR ".join(quoted)):
         for r in db.execute(
@@ -232,6 +241,10 @@ if __name__ == "__main__":
         crawl()
     elif cmd == "index":
         index()
+    elif cmd == "crawl-lastresort":
+        crawl(LAST_RESORT_SECTIONS, LR_PAGES)
+    elif cmd == "index-lastresort":
+        index(LAST_RESORT_SECTIONS, LR_PAGES, LR_DB)
     elif cmd == "search" and args:
         for h in search(args[0], int(args[1]) if len(args) > 1 else 5):
             print(f"{h['url']}\n  {h['title']} [{h['section']}]\n  {h['snippet']}\n")
