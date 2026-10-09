@@ -595,6 +595,11 @@ def t_pc_swap(a):
     return _menu_tool(pc.pc_swap, a["pokemon"], a["box"], a["slot"])
 
 
+def t_buy(a):
+    import shop
+    return _menu_tool(shop.buy, a["item"], int(a.get("quantity", 1)))
+
+
 def t_team_details(a):
     import stats
     n = p.read8(state_mod.PLAYER_PARTY_COUNT)
@@ -839,6 +844,9 @@ TOOLS = {
                       "swapping it with whoever is there (overworld). Verifies the new order.",
                       S({"pokemon": {"type": "string", "description": "nickname"}, "position": {"type": "integer"}},
                         ["pokemon", "position"]), True),
+    "buy": (t_buy, "In a Poke Mart: buy QUANTITY (1-99) of ITEM in one call. Walks to the clerk, checks the item is "
+            "stocked (lists what is if not) and that you can afford it, confirms, and reports the new count and money.",
+            S({"item": {"type": "string"}, "quantity": {"type": "integer"}}, ["item"]), True),
     "pc_swap": (t_pc_swap, "At a Pokemon Center: put party member POKEMON into the PC and take the Pokemon in BOX/SLOT "
                 "(as pc_boxes lists them) into the party, in one call. Walks to the Center's PC itself. Verifies the "
                 "result. Use it to rebuild the team for the next gym or after a loss.",
