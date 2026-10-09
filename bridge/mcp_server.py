@@ -742,10 +742,12 @@ def t_wiki_walkthrough(a):
     if not hits:
         return {"result": "nothing in the walkthrough matches; try other words (a place or person's name)", **facts}
     page = json.loads((wiki.LR_PAGES / f"{wiki.slug(hits[0]['url'])}.json").read_text(encoding="utf-8"))
+    # The whole best-matching "## " section, subsections included: picking scattered paragraphs by keyword count
+    # served 800 characters of fragments instead of the page's step-by-step route (step 6238, #159).
     terms = [t.lower() for t in re.findall(r"\w+", a["query"]) if len(t) > 2]
-    paras = [b for b in wiki.strip_excluded(page["text"]).split("\n\n") if b.strip()]
-    best = sorted(range(len(paras)), key=lambda i: -sum(paras[i].lower().count(t) for t in terms))[:4]
-    text = "\n\n".join(paras[i] for i in sorted(best))[:4000]
+    sections = re.split(r"\n(?=## )", "\n" + wiki.strip_excluded(page["text"]))
+    score = lambda sec: sum(sec.lower().count(t) for t in terms) + 5 * sum(t in sec.split("\n", 1)[0].lower() for t in terms)  # noqa: E731
+    text = max(sections, key=score).strip()[:8000]
     watcher.forbid(os.path.dirname(LOG), text)  # memory/ may not keep anything from it
     log({"step": steps, "walkthrough": a["query"], "reason": reason[:300], "page": hits[0]["url"], **facts})
     return {"page": hits[0]["title"], "excerpt": text, "other_pages": [h["title"] for h in hits[1:]],
