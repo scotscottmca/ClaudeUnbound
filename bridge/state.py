@@ -202,7 +202,13 @@ def get_state(p):
                 "species": NAMES["species"][species], "level": level, "hp": f"{hp}/{max_hp}",
                 "types": types, "ability": NAMES["abilities"][b[0x20]],
                 "status": status_name(struct.unpack("<I", b[0x4C:0x50])[0]),
-                **({"moves": moves(struct.unpack("<4H", b[0x0C:0x14]), b[0x24:0x28])} if i % 2 == 0
+                # Own side only (a player sees its own stats, not the foe's): gBattleMons +2..+0xB Atk Def Spe SpA
+                # SpD, +0x18 stat stages (6 = neutral) HP Atk Def Spe SpA SpD Acc Eva (#158; checked live against the
+                # party's stored stats on the first battle).
+                **({"moves": moves(struct.unpack("<4H", b[0x0C:0x14]), b[0x24:0x28]),
+                    "stats": dict(zip(("Atk", "Def", "Spe", "SpA", "SpD"), struct.unpack("<5H", b[2:0xC]))),
+                    "stages": {k: v - 6 for k, v in zip(("Atk", "Def", "Spe", "SpA", "SpD", "Acc", "Eva"), b[0x19:0x20]) if v != 6}}
+                   if i % 2 == 0
                    else {"caught": caught(p, species),  # already caught: defeat it or run, don't re-catch
                          "ev_yield": " ".join(f"{k} +{v}" for k, v in stats.base(species)[1].items())}),
             })

@@ -89,12 +89,34 @@ def matchups(state):
         return None
     foe = foes[0]
     out = {"vs": f"{foe['species']} ({'/'.join(foe['types'])})", "my_moves": [], "switch_options": []}
+    import stats  # here: stats imports moves
+    trainer = int(b.get("flags", "0"), 16) & 0x8  # BATTLE_TYPE_TRAINER
+    foe_stats = stats.likely(foe["species"], foe["level"], bool(trainer) and stats.foe_evs(state.get("badges") or 0))         if "level" in foe else None
+    foe_hp, foe_max = map(int, foe["hp"].split("/"))
     for mine in (x for x in b["battlers"] if x["side"] == "player"):
+        st, sg = (mine.get("stats") or {}) if foe_stats else {}, mine.get("stages") or {}
+        mine_types = species_types(mine["species"]) if st else []
         for name in mine.get("moves", {}):
             m = move(move_id(name))
             eff = effectiveness(m["type"], foe["types"]) if m["power"] else None
-            out["my_moves"].append({"user": mine["name"], "move": name, "type": m["type"], "power": m["power"],
-                                    "split": m["split"], "effectiveness": eff})
+            row = {"user": mine["name"], "move": name, "type": m["type"], "power": m["power"], "split": m["split"],
+                   "effectiveness": eff}
+            if m["power"] > 1 and st and m["split"] in ("physical", "special"):
+                a_, d_ = ("Atk", "Def") if m["split"] == "physical" else ("SpA", "SpD")
+                lo, hi = stats.damage(mine["level"], m["power"], stats.stage(st[a_], sg.get(a_, 0)), foe_stats[d_],
+                                      m["type"] in mine_types, eff)
+                pct = lambda v: round(100 * v / foe_max)  # noqa: E731
+                row["damage"] = (f"~{pct(lo)}-{pct(hi)}% of its max HP" + (" (likely KO)" if lo >= foe_hp else
+                                 " (KO on a high roll)" if hi >= foe_hp else ""))
+            out["my_moves"].append(row)
+        if st:
+            mine_spe, foe_spe = stats.stage(st["Spe"], sg.get("Spe", 0)), foe_stats["Spe"]
+            out.setdefault("speed", []).append(
+                f"{mine['name']} speed {mine_spe} vs {foe['species']} likely {foe_spe}: "
+                + ("you move first" if mine_spe > foe_spe else "it likely moves first" if mine_spe < foe_spe else "a tie"))
+    out["note"] = ("Damage is an estimate from the foe's base stats and level (perfect IVs, neutral nature"
+                   + (", 252 EVs in its two best stats" if trainer and stats.foe_evs(state.get("badges") or 0) else "")
+                   + "); abilities, items, weather and crits aren't counted.")
     active = {x["name"] for x in b["battlers"] if x["side"] == "player"}
     for p in state["party"]:
         if p["name"] in active or p["hp"].startswith("0/"):

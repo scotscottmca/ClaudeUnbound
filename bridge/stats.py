@@ -8,6 +8,7 @@ EVs u8 x6 at +0x38 (HP Atk Def Spe SpA SpD), IVs packed 5 bits each at +0x48 (sa
 
     python stats.py        # self-check, then the live party (read only)
 """
+import os
 import struct
 import sys
 
@@ -121,11 +122,46 @@ def boxes(p):
     return out
 
 
+DIFFICULTY = os.environ.get("UNBOUND_DIFFICULTY", "vanilla")  # the run's difficulty (set by the runner for Expert)
+
+
+def foe_evs(badges):
+    """Do trainers' Pokemon likely carry 252 EVs in their two best stats? Expert: after 4 badges (and Ace Trainers,
+    Experts, Victory Road, which the harness can't tell apart); Insane: after 2. Vanilla/Difficult: no."""
+    return {"expert": badges >= 4, "insane": badges >= 2}.get(DIFFICULTY, False)
+
+
+def stage(v, n):
+    """A stat at stage N (-6..+6)."""
+    return v * (2 + n) // 2 if n >= 0 else v * 2 // (2 - n)
+
+
+def likely(species_name, level, evs_top2=False):
+    """A foe's likely stats {HP Atk Def Spe SpA SpD}: IVs 31, neutral nature, no EVs, or 252 in its two best base
+    stats (Expert: Ace Trainers, Experts and trainers after 4 badges). What a player can know: base stats and level."""
+    bs, _ = base(NAMES["species"].index(species_name))
+    ev = [0] * 6
+    if evs_top2:
+        for i in sorted(range(6), key=lambda i: -bs[i])[:2]:
+            ev[i] = 252
+    return dict(zip(STATS, calc(bs, [31] * 6, ev, level, 0)))
+
+
+def damage(level, power, atk, dfn, stab, eff):
+    """(min, max) damage of one hit, no crit: the game's formula with the 85-100% roll. Items, abilities, weather,
+    screens and multi-hit are ignored (ponytail: add them when a fight turns on one)."""
+    base_ = ((2 * level // 5 + 2) * power * atk // dfn) // 50 + 2
+    return tuple(int(int(base_ * r // 100 * (1.5 if stab else 1)) * eff) for r in (85, 100))
+
+
 def _selftest():
     # Ion (Metang L43, Calm, read live 2026-10-09): stored stats 118 72 101 73 72 88
     assert calc([60, 75, 100, 50, 55, 80], [16, 7, 0, 23, 31, 9], [70, 90, 99, 145, 62, 28], 43, 20) == [118, 72, 101, 73, 72, 88]
     assert nature_effect(3) == ("Atk", "SpA") and nature_effect(0) is None and nature_effect(13) == ("Spe", "SpA")
     assert base(NAMES["species"].index("Snorlax"))[1] == {"HP": 2}
+    assert stage(100, 1) == 150 and stage(100, -1) == 66 and stage(100, 2) == 200
+    assert damage(50, 80, 100, 100, True, 2.0) == (92, 110)  # base 37; rolls 31..37; x1.5 = 46..55; x2 = 92..110
+    assert likely("Snorlax", 50)["HP"] == 235  # (2*160+31)*50//100 + 50 + 10
     assert exp_for(0, 13) == 2197 and level_from_exp(NAMES["species"].index("Pumpkaboo"), 2197) == 13
 
 
