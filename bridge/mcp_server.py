@@ -567,6 +567,15 @@ def t_team_details(a):
                      "Nature: +10% to one stat, -10% to another. IVs 0-31 are fixed per Pokemon."}
 
 
+def t_pc_boxes(a):
+    import stats
+    bx = stats.boxes(p)
+    return {"boxes": {f"Box {k}": [f"{slot}: {m['name']} ({m['species']} Lv{m['level']}, {'/'.join(m['types'])}; "
+                                   f"{m['nature']}; moves {', '.join(m['moves'])}" + (f"; holds {m['item']}" if m["item"] else "")
+                                   + f"; IVs {m['ivs']}; EVs {m['evs']})" for slot, m in v] for k, v in sorted(bx.items())},
+            "note": "Read-only list of your PC boxes (boxes 1-19). Swapping team members needs the PC at a Pokemon Center."}
+
+
 def t_map_levels(a):
     w = W.read_world(p)
     target = (a["x"], a["y"]) if "x" in a and "y" in a else None
@@ -775,6 +784,9 @@ TOOLS = {
                      "base stats, EVs per stat with the total used of 510, and IVs. Use it to plan EV training (in battle, "
                      "get_state shows each foe's ev_yield), choose leads and held items, and compare team members.",
                      S({}), False),
+    "pc_boxes": (t_pc_boxes, "List the Pokemon in your PC boxes (no need to be at a PC): name, species, level, types, "
+                 "nature, moves, held item, IVs and EVs. Use it to plan team changes: which boxed Pokemon counters the "
+                 "next gym or a team that beat you.", S({}), False),
     "map_levels": (t_map_levels, "Explain this map's levels: it splits the map into regions you can walk around in (bridges, "
                    "walkways and lower paths such as lily pads are separate regions even where they overlap on screen), "
                    "with each region's level, extent, warps, objects at its edge (a Lapras or a person may carry you across) "

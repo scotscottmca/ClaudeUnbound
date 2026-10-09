@@ -64,11 +64,69 @@ def detail(m):
             "ivs": fmt(ivs)}
 
 
+def exp_for(rate, n):
+    """EXP needed for level N at growth rate RATE (ROM species +0x13; vanilla order: 0 medium fast, 1 erratic,
+    2 fluctuating, 3 medium slow, 4 fast, 5 slow)."""
+    if n <= 1:
+        return 0
+    c = n ** 3
+    if rate == 1:
+        return c * (100 - n) // 50 if n <= 50 else c * (150 - n) // 100 if n <= 68 else             c * ((1911 - 10 * n) // 3) // 500 if n <= 98 else c * (160 - n) // 100
+    if rate == 2:
+        return c * ((n + 1) // 3 + 24) // 50 if n <= 15 else c * (n + 14) // 50 if n <= 36 else c * (n // 2 + 32) // 50
+    if rate == 3:
+        return 6 * c // 5 - 15 * n * n + 100 * n - 140
+    return {0: c, 4: 4 * c // 5, 5: 5 * c // 4}[rate]
+
+
+def level_from_exp(species, exp):
+    rate = moves._data()[moves.BASE_STATS - 0x08000000 + 0x1C * species + 0x13]
+    return max(n for n in range(1, 101) if exp_for(rate, n) <= exp)
+
+
+# PC storage (CFRU, verified #157): gPokemonStoragePtr (0x03005010) -> current box (u8) at +0, then 58-byte compressed
+# Pokemon from +4 in vanilla's 0x8340-byte box area (579 slots: boxes 1-19 and box 20 slots 1-9), box names (9
+# bytes each) at +0x8344. Where boxes 20+ live is pending.
+STORAGE_PTR, BOX_SIZE, BOX_SLOTS, IN_RAM = 0x03005010, 0x3A, 30, 579
+
+
+def box_mon(b):
+    """One 58-byte compressed box Pokemon: +0 personality, +8 nickname, +0x1C species, +0x1E item, +0x20 EXP,
+    +0x27 four moves packed 10 bits each, +0x2C EVs x6, +0x36 IVs (5 bits x6)."""
+    species, item = struct.unpack("<HH", b[0x1C:0x20])
+    if not species or species >= len(NAMES["species"]):
+        return None
+    mv = int.from_bytes(b[0x27:0x2C], "little")
+    ivw = struct.unpack("<I", b[0x36:0x3A])[0]
+    pid = struct.unpack("<I", b[0:4])[0]
+    eff = nature_effect(pid % 25)
+    return {"name": decode(b[8:18]), "species": NAMES["species"][species],
+            "level": level_from_exp(species, struct.unpack("<I", b[0x20:0x24])[0]),
+            "types": moves.species_types(NAMES["species"][species]),
+            "item": NAMES["items"][item] if item else None,
+            "moves": [NAMES["moves"][m] for m in ((mv >> (10 * i)) & 0x3FF for i in range(4)) if m],
+            "nature": NATURES[pid % 25] + (f" (+{eff[0]} -{eff[1]})" if eff else ""),
+            "evs": sum(b[0x2C:0x32]), "ivs": " ".join(str((ivw >> 5 * i) & 31) for i in range(6))}
+
+
+def boxes(p):
+    """{box number: [(slot, Pokemon), ...]} for the occupied slots of boxes 1-19."""
+    ptr = p.read32(STORAGE_PTR)
+    raw = b"".join(p.range(ptr + 4 + o, 0x1000) for o in range(0, BOX_SIZE * IN_RAM, 0x1000))
+    out = {}
+    for i in range(BOX_SLOTS * 19):
+        m = box_mon(raw[i * BOX_SIZE:(i + 1) * BOX_SIZE])
+        if m:
+            out.setdefault(i // BOX_SLOTS + 1, []).append((i % BOX_SLOTS + 1, m))
+    return out
+
+
 def _selftest():
     # Ion (Metang L43, Calm, read live 2026-10-09): stored stats 118 72 101 73 72 88
     assert calc([60, 75, 100, 50, 55, 80], [16, 7, 0, 23, 31, 9], [70, 90, 99, 145, 62, 28], 43, 20) == [118, 72, 101, 73, 72, 88]
     assert nature_effect(3) == ("Atk", "SpA") and nature_effect(0) is None and nature_effect(13) == ("Spe", "SpA")
     assert base(NAMES["species"].index("Snorlax"))[1] == {"HP": 2}
+    assert exp_for(0, 13) == 2197 and level_from_exp(NAMES["species"].index("Pumpkaboo"), 2197) == 13
 
 
 if __name__ == "__main__":
