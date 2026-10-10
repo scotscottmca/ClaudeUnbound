@@ -5,7 +5,7 @@
     python agent/run.py --fresh --bootstrap-from D:/ClaudeUnboundRuns/gym1   # start with a previous run's memory (#22)
 
 Each chunk is one `claude -p` invocation (resumed with --continue). To change the main (router) model
-mid-run, write a model ID to <workspace>/model.txt; it's read at the start of every chunk. Per chunk it logs tokens, API-equivalent
+mid-run, write a model ID to <workspace>/model.txt (the player's effort: <workspace>/effort.txt); both are read at the start of every chunk. Per chunk it logs tokens, API-equivalent
 cost, model breakdown and the milestone to <workspace>/usage.jsonl (#13), pauses when the usage window
 is exhausted and resumes after the reset, and stops at the goal or the --budget-usd alarm.
 """
@@ -28,7 +28,13 @@ from state import get_state  # noqa: E402
 
 CLAUDE = shutil.which("claude") or os.path.expanduser(r"~\.local\bin\claude.exe")
 CONTEXT_LIMIT = 160_000  # rotate to a fresh session past this (tokens re-read every turn)
-MAIN_MODEL = "claude-haiku-5-5"  # default tier; verified by Sonnet 5.5, escalates to Opus 5.5 then Fable 5.1
+# Entering another town also rotates (#175: cache reads reached 4-22M tokens a chunk), once the session holds this much.
+TOWN_ROTATE_MIN = 40_000
+TOWN = re.compile(r" (Town|City|Village)$|^Frozen Heights$")
+MAIN_MODEL = "claude-haiku-5-5"  # default tier; verified by Sonnet 5.5, escalates to Sonnet strategist then Fable
+# The player's thinking effort (#174: Haiku spent 15-22k thinking tokens a chunk on walking and menus). Subagents set
+# their own in agents.json. <workspace>/effort.txt overrides it per chunk, like model.txt.
+PLAYER_EFFORT = "medium"
 TOOLS = ["mcp__unbound", "Read", "Write", "Edit", "Glob", "Grep", "Task", "Agent"]
 # Scheduling/waiting tools park the session in wall-clock time while the game runs on: the agent once called
 # ScheduleWakeup(1200 s) to "wait for a gym guard's window" and sat idle for 20 minutes. Wait in game time (WAIT).
@@ -102,17 +108,48 @@ def setup(ws, fresh, bootstrap, goal_badges, reloaded=False, difficulty="vanilla
     Probe().autosave(os.path.join(ws, "autosaves"), 18000, 240)
 
 
-def chunk(ws, first, prompt_next, prompt_first=FIRST):
-    # Refreshed every chunk: instruction fixes reach a long run without restarting the runner.
+def escalations(ws, agent, badges):
+    """How many times the agent consulted AGENT (expert/strategist) while it held BADGES badges (usage.jsonl)."""
+    path = os.path.join(ws, "usage.jsonl")
+    if badges is None or not os.path.exists(path):
+        return 0
+    n = 0
+    for line in open(path, encoding="utf-8", errors="replace"):
+        if '"escalation"' in line:
+            e = json.loads(line)
+            n += e.get("kind") == "escalation" and e.get("agent") == agent and e.get("badges") == badges
+    return n
+
+
+def log_escalation(ws, inp, badges):
+    """A strategist/expert call, with the agent's own reason, to usage.jsonl (#173). "kind" keeps it out of the chunk
+    and cost tallies (spent_so_far, the spectator); the call's cost is in its chunk's."""
+    with open(os.path.join(ws, "usage.jsonl"), "a", encoding="utf-8") as f:
+        f.write(json.dumps({"t": round(time.time()), "kind": "escalation", "agent": inp.get("subagent_type"),
+                            "badges": badges, "reason": f"{inp.get('description', '')}: {inp.get('prompt', '')}"[:400]},
+                           ensure_ascii=False) + "\n")
+
+
+def chunk(ws, first, prompt_next, prompt_first=FIRST, badges=None):
+    # Refreshed every chunk: instruction fixes reach a long run without restarting the runner. REFERENCE.md holds the
+    # detail CLAUDE.md points to, read on demand (#175: CLAUDE.md is re-read every chunk).
     shutil.copy(os.path.join(REPO, "agent", "CLAUDE.md"), os.path.join(ws, "CLAUDE.md"))
+    shutil.copy(os.path.join(REPO, "agent", "reference.md"), os.path.join(ws, "REFERENCE.md"))
     # Re-read every chunk, so the router model can change mid-run without restarting the runner.
     override = os.path.join(ws, "model.txt")
     model = open(override).read().strip() if os.path.exists(override) else MAIN_MODEL
-    print(f"  model: {model}")
-    args = [CLAUDE, "-p", prompt_first if first else prompt_next, "--model", model,
+    override = os.path.join(ws, "effort.txt")
+    effort = open(override).read().strip() if os.path.exists(override) else PLAYER_EFFORT
+    # One expert (Fable) call per gym (#173: Fable and Opus were ~44 of 71 USD). Checked per chunk: a deny rule on the
+    # subagent, so the Agent tool refuses it with a message ("denied by permission rule") and play goes on.
+    capped = escalations(ws, "expert", badges) >= 1
+    print(f"  model: {model}, effort: {effort}" + (" (expert used for this gym: blocked)" if capped else ""))
+    args = [CLAUDE, "-p", prompt_first if first else prompt_next, "--model", model, "--effort", effort,
             "--mcp-config", "mcp.json", "--strict-mcp-config",
             "--agents", open(os.path.join(REPO, "agent", "agents.json"), encoding="utf-8").read(),
-            "--allowedTools", *TOOLS, "--disallowedTools", *BLOCKED, "--output-format", "stream-json", "--verbose"]
+            "--allowedTools", *TOOLS,
+            "--disallowedTools", *BLOCKED, *(["Agent(expert)", "Task(expert)"] if capped else []),
+            "--output-format", "stream-json", "--verbose"]
     if not first:
         args.insert(3, "--continue")
     os.makedirs(os.path.join(ws, "transcripts"), exist_ok=True)
@@ -123,16 +160,20 @@ def chunk(ws, first, prompt_next, prompt_first=FIRST):
                                 text=True, encoding="utf-8", errors="replace")
         context = 0
         tokens = {}  # model -> token counts, for chunks that end without a result event (rotation)
+        town = last_now(ws).get("map") or ""  # where this chunk starts: entering another town rotates
         for line in proc.stdout:
             out.write(line)
             try:
                 ev = json.loads(line)
             except json.JSONDecodeError:
                 continue
-            if ev.get("type") == "user" and context > CONTEXT_LIMIT and last_mode(ws) == "overworld":
+            # After one of the player's own tool results (not a subagent's) and past the floor: check where it is.
+            player_turn = ev.get("type") == "user" and not ev.get("parent_tool_use_id")
+            now = last_now(ws) if player_turn and context > TOWN_ROTATE_MIN else {}
+            if now.get("mode") == "overworld" and (context > CONTEXT_LIMIT or new_town(town, now.get("map") or "")):
                 # Every turn re-reads the whole conversation (#54: ~300k tokens a turn after 400 actions).
                 # Between actions and out of battle, end the chunk; the next one starts fresh from memory/.
-                print(f"  context {context // 1000}k > {CONTEXT_LIMIT // 1000}k: rotating to a fresh session")
+                print(f"  context {context // 1000}k on {now.get('map')}: rotating to a fresh session")
                 proc.terminate()
                 proc.wait()
                 return ({"rotated": True, "result": f"rotated at {context} context tokens", "usage": tokens,
@@ -149,21 +190,31 @@ def chunk(ws, first, prompt_next, prompt_first=FIRST):
                         print("  agent:", block["text"].strip()[:300])
                     elif block.get("type") == "tool_use":
                         print("  tool:", block["name"].replace("mcp__unbound__", ""), json.dumps(block["input"])[:120])
+                        inp = block.get("input") or {}
+                        if block["name"] in ("Agent", "Task") and inp.get("subagent_type") in ("expert", "strategist"):
+                            log_escalation(ws, inp, badges)
             elif ev.get("type") == "result":
                 result = ev
         proc.wait()
     return result or {"is_error": True, "result": f"no result (exit {proc.returncode})"}, time.time() - started
 
 
-def last_mode(ws):
-    """Mode after the agent's latest action, from the MCP action log ("" if unknown)."""
+def new_town(town, here):
+    """HERE is a town other than TOWN (the session's starting map; None: any town is new). Buildings share their
+    town's name, so walking into a house doesn't count."""
+    return bool(TOWN.search(here)) and here != town
+
+
+def last_now(ws):
+    """Summary after the agent's latest action ({"mode", "map", ...}), from the MCP action log ({} if unknown)."""
     try:
         with open(os.path.join(ws, "log.jsonl"), "rb") as f:
             f.seek(max(0, os.path.getsize(f.name) - 4000))
             lines = [l for l in f.read().decode("utf-8", "replace").splitlines() if '"now"' in l]
-        return json.loads(lines[-1])["now"]["mode"] if lines else ""
+        now = json.loads(lines[-1])["now"] if lines else {}
+        return now if isinstance(now, dict) else {}
     except (OSError, ValueError, KeyError):
-        return ""
+        return {}
 
 
 def chunk_cost(cost, prev):
@@ -265,8 +316,9 @@ def main():
         if first:
             session_total = 0.0
         acted = actions(a.workspace)
+        badges = milestone().get("badges")  # None while the emulator is unreachable: no expert cap then
         res, secs = chunk(a.workspace, first, NEXT.format(goal=goal_text(a.goal_badges)),
-                          FIRST + (BOOTSTRAP if n == 0 and a.fresh and a.bootstrap_from else ""))
+                          FIRST + (BOOTSTRAP if n == 0 and a.fresh and a.bootstrap_from else ""), badges)
         text = str(res.get("result", ""))
         wait = limit_wait(text) if res.get("is_error") else None
         entry = {"t": round(time.time()), "chunk": n, "secs": round(secs), "turns": res.get("num_turns"),

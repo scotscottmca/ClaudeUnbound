@@ -34,7 +34,8 @@ DEDUPE_WINDOW = 10
 DEDUPE_EXEMPT = ("WATCHDOG", "VERIFY before answering", "FORCED SWITCH", "ITEM", "MISSED")
 HARNESS_OWNED = {"todo.md", "archive.md", "operator.md"}  # written by the harness, not the agent
 NAG_EVERY = 25  # actions between MEMORY notes about the same oversized file
-FILE_BUDGET, OBJECTIVES_BUDGET = 8000, 2000  # characters
+# characters; the other files went 8000 -> 5000 (#175: memory is re-read every chunk; trimmed lines go to archive.md)
+FILE_BUDGET, OBJECTIVES_BUDGET = 5000, 2000
 
 RT = sys.modules.get("_unbound_watcher_rt")
 if RT is None:

@@ -725,6 +725,24 @@ def runner_cost_tally():
 
 
 @case(emu=False)
+def runner_escalation_cap():
+    # #173: strategist/expert calls are logged to usage.jsonl with their reason, cost nothing in the tallies, and one
+    # expert call per badge count caps the expert. #175: entering another town (not a building in it) rotates.
+    import run
+    ws = tempfile.mkdtemp(dir=TMP)
+    p = os.path.join(ws, "usage.jsonl")
+    open(p, "w").write('{"chunk": 0, "cost_usd": 1.0}\n')
+    assert run.escalations(ws, "expert", 2) == 0
+    run.log_escalation(ws, {"subagent_type": "expert", "description": "Gym 3", "prompt": "lost twice to Mirskle"}, 2)
+    run.log_escalation(ws, {"subagent_type": "strategist", "description": "route", "prompt": "where next"}, 2)
+    assert run.escalations(ws, "expert", 2) == 1 and run.escalations(ws, "expert", 3) == 0, open(p).read()
+    assert run.escalations(ws, "strategist", 2) == 1 and run.escalations(ws, "expert", None) == 0
+    assert "lost twice" in open(p).read() and abs(run.spent_so_far(p) - 1.0) < 1e-9, run.spent_so_far(p)
+    assert run.new_town("Route 2", "Bellin Town") and run.new_town("", "Frozen Heights")
+    assert not run.new_town("Bellin Town", "Bellin Town") and not run.new_town("Bellin Town", "Route 2")
+
+
+@case(emu=False)
 def stats_self_check():
     import stats
     stats._selftest()

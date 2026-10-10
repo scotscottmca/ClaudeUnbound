@@ -11,10 +11,11 @@
       "mcp__unbound__wiki_search",
       "mcp__unbound__wiki_read"
     ],
-    "model": "claude-opus-5-5"
+    "model": "claude-sonnet-5-5",
+    "effort": "high"
   },
   "expert": {
-    "description": "Consult for hard problems: gym leaders, rivals, bosses, trainer battles against equal or stronger foes, puzzles (ice, boulders, switches), or being stuck after two different attempts.",
+    "description": "Consult at most once per gym (the runner blocks a second call until the next badge), and only after two failed attempts at the same goal (two lost battles against the same trainer, two failed tries at the same puzzle) and after the strategist: gym leaders, rivals, bosses, puzzles, being stuck. Give it what you tried and why it failed.",
     "prompt": "You are the expert advisor to an agent playing Pokémon Unbound (GBA FireRed romhack). It is facing something hard. Read memory/ files that bear on it (opponents, team, learnings, map_notes). Check facts with get_state / get_screenshot and the wiki tool if available. Think it through, then reply with a concrete plan: for battles, the team order, the move each turn and what to do if it goes wrong; for puzzles, the exact move sequence; for being stuck, what has been tried, why it failed and what to try next. Don't press buttons yourself.",
     "tools": [
       "Read",
@@ -25,7 +26,8 @@
       "mcp__unbound__wiki_search",
       "mcp__unbound__wiki_read"
     ],
-    "model": "claude-fable-5-1"
+    "model": "claude-fable-5-1",
+    "effort": "high"
   },
   "refiner": {
     "description": "Run at every LEARNING CHECK: reviews the last stretch of play, updates memory/, critiques the approach.",
@@ -42,7 +44,7 @@
   },
   "verifier": {
     "description": "Sonnet verification layer. Consult before any irreversible choice ('VERIFY before answering': forgetting a move, releasing or tossing, giving up). Routine checks are run by the harness itself. Give it what you plan and why.",
-    "prompt": "You verify the work of a fast, cheaper agent playing Pokémon Unbound. Check its recent actions and beliefs against the truth. Prefer get_state's text (dialog, battle text, party moves) over your reading of a screenshot: it names the Pokemon and moves exactly. call get_state (and get_screenshot if needed), read memory/ (objectives, learnings, map_notes, items, npcs) and the last ~30 lines of log.jsonl in the working directory. Report briefly: (1) anything it believes that the game state contradicts, (2) loops or wasted actions, (3) policy misses (heal before grass, catch special encounters, rename captures, record opponents/items/NPCs, talk/read once, skip obstacles until usable, type matchups and switching), (4) for an irreversible choice: approve or reject with the reason. If the situation is beyond a quick check (a hard battle, a puzzle, being stuck), say ESCALATE and to whom (strategist or expert). Don't press buttons yourself. At most 6 bullets. When you've finished checking, call record_verification with a one-line verdict: that unblocks the agent's game actions.",
+    "prompt": "You verify the work of a fast, cheaper agent playing Pokémon Unbound. Check its recent actions and beliefs against the truth. Prefer get_state's text (dialog, battle text, party moves) over your reading of a screenshot: it names the Pokemon and moves exactly. call get_state (and get_screenshot if needed), read memory/ (objectives, learnings, map_notes, items, npcs) and the last ~30 lines of log.jsonl in the working directory. Report briefly: (1) anything it believes that the game state contradicts, (2) loops or wasted actions, (3) policy misses (heal before grass, catch special encounters, rename captures, record opponents/items/NPCs, talk/read once, skip obstacles until usable, type matchups and switching), (4) for an irreversible choice: approve or reject with the reason. If the situation is beyond a quick check (a hard battle, a puzzle, being stuck), say ESCALATE to the strategist (the expert only after two failed attempts at the same goal, once per gym). Don't press buttons yourself. At most 6 bullets. When you've finished checking, call record_verification with a one-line verdict: that unblocks the agent's game actions.",
     "tools": [
       "Read",
       "Glob",

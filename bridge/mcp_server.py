@@ -211,6 +211,8 @@ def sync_instructions():
             if h not in heads:
                 heads.append(h)
     shutil.copy(REPO_INSTRUCTIONS, ws_copy)
+    # The detail CLAUDE.md points to (#175); the runner also copies it at every chunk start.
+    shutil.copy(os.path.join(HERE, "..", "agent", "reference.md"), os.path.join(os.path.dirname(LOG), "REFERENCE.md"))
     return [f"INSTRUCTIONS UPDATED: re-read CLAUDE.md (changed: {', '.join(heads)})"]
 
 
