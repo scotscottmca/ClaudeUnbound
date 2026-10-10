@@ -27,7 +27,8 @@ def follow(path):
 
 
 def runner_alive():
-    cmd = ("(Get-CimInstance Win32_Process -Filter \"name='python.exe'\" | "
+    # @(...): with one match PowerShell 5.1 returns a bare CimInstance whose .Count is empty, not 1 (#169)
+    cmd = ("@(Get-CimInstance Win32_Process -Filter \"name='python.exe'\" | "
            "Where-Object { $_.CommandLine -match 'agent[\\\\/]run\\.py' }).Count")
     out = subprocess.run(["powershell", "-NoProfile", "-Command", cmd], capture_output=True, text=True).stdout.strip()
     return out not in ("", "0")
