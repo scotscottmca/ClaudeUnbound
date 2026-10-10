@@ -234,6 +234,134 @@ def press_buttons_string():
 
 
 @case(emu=False)
+def bad_tool_args():
+    # #170: missing or malformed arguments get a readable message naming the argument and its form, not a KeyError;
+    # press_buttons takes the agent's "command" alias; nothing is pressed when any key is bad.
+    import json
+    keys, real, wiki_real = [], M.press, M.wiki
+    M.press = lambda _p, key, *a: keys.append(key) or {"moved": False, "changed": []}
+    read = []
+    M.wiki = types.SimpleNamespace(read=lambda page: read.append(page) or {"text": "page text"},
+                                   search=lambda q, n: [{"url": "https://unboundwiki.com/items/hm01/"}])
+
+    def bad(fn, a, want):
+        try:
+            fn(a)
+        except M.BadArgs as e:
+            assert want in str(e), e
+            return
+        raise AssertionError(f"{fn.__name__}({a}) not refused")
+    try:
+        M.t_press_buttons({"command": "RIGHT"})
+        M.t_press_buttons({"button": ["up"]})
+        bad(M.t_press_buttons, {}, "needs 'buttons'")
+        bad(M.t_press_buttons, {"buttons": ["A", "E"]}, "unknown button(s) E")
+        assert keys == ["RIGHT", "UP"], keys  # the A before the bad E was not pressed
+        bad(M.t_walk_to, {}, "walk_to needs 'x' and 'y'")
+        bad(M.t_walk_to, {"x": "left", "y": 3}, "integer tile coordinates")
+        bad(M.t_sneak_to, {"x": 3}, "sneak_to needs 'x' and 'y'")
+        bad(M.t_wiki_read, {"type_url": "Crater Town"}, "wiki_read needs 'page'")
+        M.t_wiki_read({"query": "https://unboundwiki.com/locations/fallshore-city/"})
+        M.t_wiki_read({"url": "https://unboundwiki.com/locations/crater-town/", "page": "2"})
+        assert read == ["https://unboundwiki.com/locations/fallshore-city/",
+                        "https://unboundwiki.com/locations/crater-town/"], read
+
+        def missing(page):
+            raise KeyError(f"no cached page for {page!r}")
+        M.wiki.read = missing
+        bad(M.t_wiki_read, {"url": "https://unboundwiki.com/items/key-items/hm01-cut/"}, "items/hm01/")
+        # Through the MCP handler: the message alone, flagged as an error, no traceback, no action counted.
+        M.p, M.verify_due, steps = Mem(), 0, M.steps
+        r = M.handle({"jsonrpc": "2.0", "id": 1, "method": "tools/call",
+                      "params": {"name": "press_buttons", "arguments": {"keys_to_press": "A"}}})["result"]
+        assert r["isError"] and "needs 'buttons'" in r["content"][0]["text"] and "Traceback" not in r["content"][0]["text"], r
+        assert M.steps == steps
+        last = json.loads(open(M.LOG, encoding="utf-8").read().splitlines()[-1])
+        assert "bad_args" in last and "error" not in last, last
+    finally:
+        M.press, M.wiki = real, wiki_real
+
+
+@case(emu=False)
+def watchdog_escalation():
+    # #171: the third WATCHDOG on one map within DOG_WINDOW actions names the loop (the last two actions) and logs an
+    # operator alert; other maps and older notes don't count; nothing is blocked, only the text changes.
+    import json
+    M.dogs.clear()
+    M.watchdog_fired = 0
+    M.last_actions = [["walk_to", {"x": 3, "y": 4}], ["press_buttons", {"buttons": ["A"]}]]
+    s = {"map": {"group": 3, "num": 5, "name": "Route 5"}, "pos": [3, 4]}
+    other = {"map": {"group": 1, "num": 2, "name": "Dresco Town"}, "pos": [0, 0]}
+    got = []
+    for step, where in ((100, s), (110, s), (115, other), (120, s)):
+        M.steps = step
+        got.append(M.watchdog(where, "advice."))
+    assert got[0] == "WATCHDOG: advice." and got[1].startswith("WATCHDOG: advice. ESCALATE"), got
+    assert got[2].startswith("WATCHDOG: advice."), got  # Dresco's first
+    assert got[3].startswith("WATCHDOG (#3 on Route 5 (3/5)") and \
+        'walk_to {"x": 3, "y": 4} then press_buttons {"buttons": ["A"]}' in got[3] and "different" in got[3], got[3]
+    last = json.loads(open(M.LOG, encoding="utf-8").read().splitlines()[-1])
+    assert "operator_alert" in last and "Route 5" in last["operator_alert"], last
+    M.steps = 120 + M.DOG_WINDOW  # the earlier two have aged out of the window
+    assert M.watchdog(s, "advice.").startswith("WATCHDOG: advice."), M.dogs
+    # The stall watchdog in notes() goes through it too.
+    M.p = Mem()
+    st = {"mode": "other", "map": s["map"], "pos": [3, 4], "party": [{"name": "Ion", "hp": "40/40"}]}
+    M.dogs["3/5"] = [M.steps - 2, M.steps - 1]
+    M.last_map, M.last_fingerprint, M.unchanged = (3, 5), M.fingerprint(st), M.STALL_AFTER - 1
+    assert any(n.startswith("WATCHDOG (#") and "nothing has changed" in n for n in M.notes(st)), M.dogs
+    M.dogs.clear()
+    M.watchdog_fired = 0
+
+
+@case(emu=False)
+def verifier_cadence():
+    # #172: the verifier runs every VERIFY_EVERY (40) actions, and only when something happened since its last call:
+    # a harness note other than the routine LEARNING CHECK / VERIFIER ones, a map change, or a battle ending.
+    import json
+    import watcher
+    ws = os.path.join(tempfile.mkdtemp(dir=TMP), "ws")
+    os.makedirs(os.path.join(ws, "memory"))
+    lp = os.path.join(ws, "log.jsonl")
+
+    def write(entries):
+        open(lp, "w").write("".join(json.dumps({"tool": "walk_to", "harness": [], **e}) + "\n" for e in entries))
+
+    def now(mode="overworld", m=(3, 5)):
+        return {"mode": mode, "map": "R", "map_id": list(m), "pos": [1, 1]}
+    quiet = [{"step": i, "now": now()} for i in range(1, 41)]
+    quiet[39]["harness"] = ["LEARNING CHECK (action 40): ...", "VERIFIER (as of step 0): x"]
+    write(quiet)
+    assert not watcher.eventful(lp, 0)
+    write(quiet + [{"step": 41, "now": now(), "harness": ["MILESTONE: {}"]}])
+    assert watcher.eventful(lp, 0) and not watcher.eventful(lp, 41)
+    write(quiet + [{"step": 41, "now": now(m=(3, 6))}])
+    assert watcher.eventful(lp, 0) and not watcher.eventful(lp, 41)
+    write(quiet[:20] + [{"step": 21, "now": now("battle")}, {"step": 22, "now": now("battle")}])
+    assert not watcher.eventful(lp, 0)  # a battle starting is not a result yet
+    write(quiet[:20] + [{"step": 21, "now": now("battle")}, {"step": 22, "now": now()}])
+    assert watcher.eventful(lp, 0)
+    spawned, real = [], watcher.spawn
+    watcher.spawn = lambda kind, *a: spawned.append((kind, a[2])) or True
+    try:
+        watcher.RT.verified = 0
+        watcher.tick(20, {}, lp)  # step 20: the watcher only
+        write(quiet)
+        watcher.tick(40, {}, lp)  # nothing happened: skipped
+        assert spawned == [("watcher", 20), ("watcher", 40)], spawned
+        write(quiet + [{"step": 45, "now": now(), "harness": ["WATCHDOG: x"]}] +
+              [{"step": i, "now": now()} for i in range(46, 81)])
+        watcher.tick(80, {}, lp)  # the step-45 watchdog, since the last verification (0): runs
+        assert ("verifier", 80) in spawned and watcher.RT.verified == 80, spawned
+        watcher.tick(120, {}, lp)  # nothing after 80
+        assert [k for k in spawned if k[0] == "verifier"] == [("verifier", 80)], spawned
+    finally:
+        watcher.spawn, watcher.RT.verified = real, 0
+        watcher.RT.mem = None
+    self_check("watcher.py")
+
+
+@case(emu=False)
 def runner_goal_and_bootstrap():
     import run
     assert run.goal_text(1) == "the first badge" and "8 badges" in run.NEXT.format(goal=run.goal_text(8))

@@ -146,7 +146,34 @@ def fingerprint(s):  # a string, so it compares equal after a save/restore
 # Runtime state that must survive a hot reload (and a server restart): saved after every call.
 STATE_FILE = os.path.join(os.path.dirname(LOG), "server_state.json")
 PERSIST = ("steps", "verify_due", "last_verified", "last_prompt", "last_fingerprint", "unchanged",
-           "watchdog_fired", "battle_seen")
+           "watchdog_fired", "battle_seen", "dogs", "last_actions")
+dogs = {}  # "group/num" -> steps of the WATCHDOG notes there within DOG_WINDOW
+last_actions = []  # [tool, args] of the last two actions, for naming a loop
+DOG_WINDOW, DOG_ESCALATE = 200, 3  # the 3rd watchdog on one map within 200 actions names the loop (#171)
+
+
+def watchdog(s, text):
+    """A WATCHDOG note. The same advice repeated changed nothing (Route 5, Dresco, Crater Town: dozens each, #171),
+    so from the DOG_ESCALATE-th on one map within DOG_WINDOW actions the note names the loop (the last two actions)
+    and an operator_alert line goes to log.jsonl. Only the text changes: nothing is blocked (grinding and EV
+    training repeat on purpose)."""
+    global watchdog_fired
+    watchdog_fired += 1
+    key = f"{s['map']['group']}/{s['map']['num']}"
+    dogs[key] = [t for t in dogs.get(key, []) if steps - t < DOG_WINDOW] + [steps]
+    # The strategist (Sonnet), not the expert: watchdog_fired never resets, so this sent every later watchdog to Fable
+    # (#173: Fable and Opus were ~44 of 71 USD). The expert is the agent's call, once per gym (agent/CLAUDE.md, run.py).
+    tail = " ESCALATE to the strategist subagent: the watchdog has fired repeatedly." if watchdog_fired >= 2 else ""
+    n = len(dogs[key])
+    if n < DOG_ESCALATE:
+        return "WATCHDOG: " + text + tail
+    loop = " then ".join(f"{t} {json.dumps(a, ensure_ascii=False)[:80]}" for t, a in last_actions) or "(no actions recorded)"
+    log({"step": steps, "operator_alert": f"WATCHDOG x{n} on {s['map']['name']} ({key}) within {DOG_WINDOW} "
+                                          f"actions at {s['pos']}; loop: {loop}"})
+    return (f"WATCHDOG (#{n} on {s['map']['name']} ({key}) in the last {DOG_WINDOW} actions; the same advice has not "
+            f"helped): {text} Your loop: {loop}, at {s['pos']}. Do not repeat that pair again: take a different action "
+            "or switch to a different goal (objectives.md, memory/todo.md). If you are grinding or EV training here on "
+            "purpose, carry on." + tail)
 
 
 def persist():
@@ -214,12 +241,10 @@ def notes(s):
     unchanged = unchanged + 1 if fp == last_fingerprint else 0
     last_fingerprint = fp
     if unchanged >= STALL_AFTER:
-        watchdog_fired += 1
         unchanged = 0
-        out.append(f"WATCHDOG: nothing has changed for {STALL_AFTER} actions. Stop and reflect: take a "
-                   "screenshot, re-read your objectives and try something different. Rolling back to a savestate "
-                   "is not allowed: work your way out." + (" ESCALATE to the expert subagent: the watchdog has fired repeatedly."
-                                   if watchdog_fired >= 2 else ""))
+        out.append(watchdog(s, f"nothing has changed for {STALL_AFTER} actions. Stop and reflect: take a "
+                               "screenshot, re-read your objectives and try something different. Rolling back to a "
+                               "savestate is not allowed: work your way out."))
     global last_map
     here = (s["map"]["group"], s["map"]["num"])
     if last_map and here != last_map:
@@ -299,13 +324,11 @@ def notes(s):
     if s["mode"] == "overworld" and (not arrivals or arrivals[-1] != spot):
         arrivals.append(spot)
         if arrivals.count(spot) >= 4:  # moving, so the no-change watchdog can't see it
-            watchdog_fired += 1
             arrivals.clear()
-            out.append(f"WATCHDOG: you keep coming back to {s['map']['name']} (map {s['map']['group']}/{s['map']['num']}) {s['pos']} (4 times in the last 20 "
-                       "moves): you're going in circles. Stop. Re-read memory/map_notes.md and objectives.md for "
-                       "this place, take a screenshot, and pick a genuinely different route or goal."
-                       + (" ESCALATE to the expert subagent: the watchdog has fired repeatedly."
-                          if watchdog_fired >= 2 else ""))
+            out.append(watchdog(s, f"you keep coming back to {s['map']['name']} (map {s['map']['group']}/{s['map']['num']}) "
+                                   f"{s['pos']} (4 times in the last 20 moves): you're going in circles. Stop. Re-read "
+                                   "memory/map_notes.md and objectives.md for this place, take a screenshot, and pick a "
+                                   "genuinely different route or goal."))
     global verify_due
     # Routine verification is harness-run now (watcher.py, user 2026-10-08); only irreversible prompts gate actions.
     # Battle prompts too: "Delete a move?" when learning a fifth move happens inside battle.
@@ -345,8 +368,9 @@ def notes(s):
             # Only spend a stronger model where it matters: the agent rightly ignored the note for an
             # easy trainer, and a note it learns to ignore is worse than none.
             gap = max(f["level"] for f in foes) - max(m["level"] for m in mine)
-            if gap >= 0:
-                out.append("ESCALATE to the expert subagent: trainer battle against an equal or higher level foe.")
+            if gap >= 0:  # #173: the strategist; the expert only after two lost attempts, once per gym
+                out.append("ESCALATE to the strategist subagent: trainer battle against an equal or higher level foe. "
+                           "Ask it for a plan, then execute it.")
             elif gap >= -2:
                 out.append("ESCALATE to the strategist subagent: trainer battle against a close-level foe. "
                            "Ask it for a plan, then execute it.")
@@ -407,19 +431,36 @@ def t_get_screenshot(_):
     return screenshot()
 
 
+class BadArgs(Exception):
+    """A tool called with missing or malformed arguments: handle() returns the message alone (no traceback, no
+    action counted), so the agent reads what to pass instead of a bare KeyError (#170)."""
+
+
+def tile_args(a, tool):
+    """(x, y) from A as integers, or BadArgs naming them."""
+    try:
+        return int(a["x"]), int(a["y"])
+    except (KeyError, TypeError, ValueError):
+        raise BadArgs(f"{tool} needs 'x' and 'y': integer tile coordinates on this map, e.g. {{\"x\": 12, \"y\": 7}} "
+                      f"(got {json.dumps(a, ensure_ascii=False)[:120]})") from None
+
+
 def t_press_buttons(a):
     out = []
-    buttons = a["buttons"]
+    # The agent called it with "command" (twice, #170); "button" is the other obvious slip.
+    buttons = next((a[k] for k in ("buttons", "command", "button", "keys") if a.get(k)), None)
     if isinstance(buttons, str):  # "A" or "UP, A": a bare string used to be split into letters
         buttons = [b for b in buttons.replace(",", " ").split()]
-    for key in buttons:
-        key = key.upper()
+    keys = [str(k).upper() for k in buttons] if isinstance(buttons, list) else []
+    bad = [k for k in keys if k not in KEYS + ["WAIT"]]
+    if not keys or bad:  # checked before pressing anything: a bad key mid-list used to leave half the list pressed
+        raise BadArgs(("unknown button(s) " + ", ".join(bad) if bad else "press_buttons needs 'buttons'")
+                      + f": a list of {KEYS + ['WAIT']} pressed in order, e.g. {{\"buttons\": [\"UP\", \"A\"]}}")
+    for key in keys:
         if key == "WAIT":  # the agent asked for this: let a cutscene or animation play out
             p.step(30)
             out.append({"key": "WAIT", "frames": 30})
             continue
-        if key not in KEYS:
-            raise ValueError(f"unknown button {key}; use {KEYS + ['WAIT']}")
         t = press(p, key, a.get("hold_frames", 4), a.get("wait_frames", 16))
         out.append({"key": key, "moved": t["moved"], "changed": t["changed"],
                     **({"party_cursor": t["after"]["party_cursor"]} if "party_cursor" in t.get("after", {}) else {})})
@@ -483,7 +524,7 @@ def run_bot(fn, *args):
 
 
 def t_walk_to(a):
-    target = (a["x"], a["y"])
+    target = tile_args(a, "walk_to")
     w = W.read_world(p)
     npc_id = next((n["id"] for n in w["npcs"] if (n["x"], n["y"]) == target), None)
     sign = next((x for x in w["signs"] if (x["x"], x["y"]) == target), None)
@@ -653,7 +694,7 @@ def t_map_levels(a):
 
 
 def t_sneak_to(a):
-    return run_bot(bot.sneak, p, (a["x"], a["y"]), a.get("max_steps", 80), a.get("max_wait_frames", 2400))
+    return run_bot(bot.sneak, p, tile_args(a, "sneak_to"), a.get("max_steps", 80), a.get("max_wait_frames", 2400))
 
 
 def t_watch_area(a):
@@ -746,12 +787,14 @@ def stuck_evidence():
     """(unmet conditions, facts) for the walkthrough gate: no progress (new map, badge, or a new operator hint) for STUCK_ACTIONS actions,
     STUCK_WATCHDOGS watchdog notes since, and both the strategist and the expert consulted since (transcripts)."""
     ws = os.path.dirname(LOG)
-    progress_step, progress_t = 0, 0.0
+    progress_step, progress_t, badge_t = 0, 0.0, 0.0
     if os.path.exists(tracker.path):
         for line in open(tracker.path, encoding="utf-8"):
             e = json.loads(line)
             if e["kind"] in ("map", "badge"):
                 progress_step, progress_t = e.get("step") or 0, e.get("t") or 0.0
+            if e["kind"] == "badge":
+                badge_t = e.get("t") or 0.0
     hint = os.path.join(ws, "operator.md")  # a new operator hint is a fresh start: try it before the walkthrough
     if os.path.exists(hint) and os.path.getmtime(hint) > progress_t:
         progress_t = os.path.getmtime(hint)
@@ -774,16 +817,19 @@ def stuck_evidence():
                 if (e.get("step") or 0) > progress_step and any(n.startswith("WATCHDOG") for n in e.get("harness") or []):
                     dogs += 1
     asked = set()
-    since = time.strftime("%Y-%m-%dT%H:%M:%S", time.gmtime(progress_t))
+    # The expert is capped at one call per gym (#173: the runner blocks a second until the next badge), so one since
+    # the last badge counts; otherwise the gate could never open after the expert was asked before the last new map.
+    since = {"strategist": time.strftime("%Y-%m-%dT%H:%M:%S", time.gmtime(progress_t)),
+             "expert": time.strftime("%Y-%m-%dT%H:%M:%S", time.gmtime(min(badge_t, progress_t)))}
     for f in glob.glob(os.path.join(ws, "transcripts", "*.jsonl")):
-        if os.path.getmtime(f) < progress_t:
+        if os.path.getmtime(f) < min(badge_t, progress_t):
             continue
         for line in open(f, encoding="utf-8", errors="replace"):
             if '"name":"Agent"' not in line or '"subagent_type"' not in line:
                 continue
             m = re.search(r'"timestamp":"([^"]+)"', line)
-            if m and m.group(1) >= since:
-                asked |= {k for k in ("strategist", "expert") if f'"subagent_type":"{k}"' in line}
+            if m:
+                asked |= {k for k in since if f'"subagent_type":"{k}"' in line and m.group(1) >= since[k]}
     facts = {"actions_since_progress": steps - progress_step, "watchdogs_since_progress": dogs,
              "consulted_since_progress": sorted(asked)}
     unmet = ([f"{STUCK_ACTIONS} actions without progress (a new map or a badge): {steps - progress_step} so far"]
@@ -819,10 +865,25 @@ def t_wiki_walkthrough(a):
 
 
 def t_wiki_read(a):
-    page = a.get("page") or a.get("url") or a.get("slug")  # the agent reaches for "url" (search returns urls)
+    # The agent reaches for "url" (search returns urls), put the url in "query", and once sent page "2" beside a url
+    # (#170): take the first value that looks like an address, else the first string given.
+    given = [a.get(k) for k in ("page", "url", "slug", "query")]
+    given = [v.strip() for v in given if isinstance(v, str) and v.strip()]
+    page = next((v for v in given if "/" in v), given[0] if given else None)
     if not page:
-        raise ValueError("pass the page's url (from wiki_search) as 'page'")
-    text = wiki.read(page)["text"]
+        raise BadArgs("wiki_read needs 'page': a url returned by wiki_search, e.g. "
+                      "{\"page\": \"https://unboundwiki.com/pokemon/snorunt/\"} "
+                      f"(got {json.dumps(a, ensure_ascii=False)[:120]})")
+    try:
+        text = wiki.read(page)["text"]
+    except KeyError as e:  # outside the indexed sections, or never cached: say so and point at real pages
+        words = re.sub(r"[^a-z0-9]+", " ", page.lower().rstrip("/").rsplit("/", 1)[-1]).strip()
+        try:
+            near = [h["url"] for h in wiki.search(words, 3)] if words else []
+        except Exception:
+            near = []
+        raise BadArgs(f"wiki_read: {e.args[0]}" + (f". Pages found with wiki_search({words!r}): {near}" if near else
+                                                    ". Find the page with wiki_search first.")) from None
     return {"page": page, "text": text[:12000] + (" [truncated]" if len(text) > 12000 else "")}
 
 
@@ -978,7 +1039,7 @@ TOOLS = {
 
 
 def call(name, args):
-    global steps, p
+    global steps, p, last_actions
     fn, _, _, is_action = TOOLS[name]
     if is_action and verify_due and steps - verify_due >= VERIFY_GRACE:
         # The default tier ignored VERIFY notes (gym-1 run, Haiku 5.5): a note it can skip is only a
@@ -1001,6 +1062,7 @@ def call(name, args):
         [{"type": "text", "text": json.dumps(result, ensure_ascii=False)}]
     if is_action:
         steps += 1
+        last_actions = (last_actions + [[name, args]])[-2:]
         s = get_state(p)
         msgs = notes(s)
         if s["mode"] == "dialog" and mode_before != "dialog":
@@ -1019,7 +1081,7 @@ def call(name, args):
         log({"step": steps, "tool": name, "args": args, "result": json.dumps(brief, ensure_ascii=False)[:300],
              "now": summary(s), "harness": msgs})
         try:
-            watcher.tick(steps, s, LOG)  # every ~10/20 actions: background watcher/verifier; memory guard every action
+            watcher.tick(steps, s, LOG)  # watcher every 10 actions, verifier every 40 if anything happened; memory guard every action
         except Exception as e:
             log({"step": steps, "error": f"watcher tick: {e!r}"})
     else:
@@ -1037,6 +1099,9 @@ def handle(msg):
     elif method == "tools/call":
         try:
             result = {"content": call(msg["params"]["name"], msg["params"].get("arguments") or {})}
+        except BadArgs as e:  # the agent's slip, not a harness error: logged apart so the operator's monitor stays quiet
+            log({"step": steps, "tool": msg["params"]["name"], "args": msg["params"].get("arguments"), "bad_args": str(e)})
+            result = {"content": [{"type": "text", "text": str(e)}], "isError": True}
         except Exception as e:
             log({"step": steps, "tool": msg["params"]["name"], "error": repr(e)})
             result = {"content": [{"type": "text", "text": f"error: {e!r}\n{traceback.format_exc()[-800:]}"}],

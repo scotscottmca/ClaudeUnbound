@@ -2,7 +2,8 @@
 block play.
 
 - watcher: every WATCH_EVERY actions, Haiku reads the recent stretch and returns at most 2 actionable notes, or nothing.
-- verifier: every VERIFY_EVERY actions, Sonnet checks recent actions, state and objectives.md: OK or one correction.
+- verifier: every VERIFY_EVERY actions, if anything happened since its last call (eventful()), Sonnet checks recent
+  actions, state and objectives.md: OK or one correction.
 - memory guard (no model; the curator model it replaced cost ~11% of a run for housekeeping): after each action,
   any line the agent removed from memory/ is appended to memory/archive.md, memory/operator.md is copied from the
   operator's <workspace>/operator.md, and a file over its budget gets a MEMORY note asking the agent to condense it.
@@ -27,7 +28,7 @@ import types
 CLAUDE = os.environ.get("UNBOUND_CLAUDE") or shutil.which("claude") or os.path.expanduser(r"~\.local\bin\claude.exe")
 MODELS = {"watcher": "claude-haiku-5-5", "verifier": "claude-sonnet-5-5"}
 TIMEOUT = {"watcher": 90, "verifier": 150}
-WATCH_EVERY, VERIFY_EVERY = 10, 20
+WATCH_EVERY, VERIFY_EVERY = 10, 40
 DEDUPE_WINDOW = 10
 # Never deduped: WATCHDOG and prompts that need an answer; ITEM/MISSED already fire once per item, door or visit.
 DEDUPE_EXEMPT = ("WATCHDOG", "VERIFY before answering", "FORCED SWITCH", "ITEM", "MISSED")
@@ -66,20 +67,50 @@ def enabled(ws):
 
 # --- prompt material ---------------------------------------------------------------------
 
-def recent(log_path, n):
-    """The last N agent actions from log.jsonl, one short line each."""
+def tail(log_path):
+    """The parsed entries of log.jsonl's last 120 kB."""
     try:
         with open(log_path, "rb") as f:
             f.seek(max(0, os.path.getsize(log_path) - 120_000))
             lines = f.read().decode("utf-8", "replace").splitlines()
     except OSError:
-        return ""
+        return []
     out = []
     for ln in lines:
         try:
             d = json.loads(ln)
         except ValueError:
             continue
+        if isinstance(d, dict):
+            out.append(d)
+    return out
+
+
+ROUTINE = ("LEARNING CHECK", "VERIFIER")  # notes that come every stretch (or from the verifier itself): not news
+
+
+def eventful(log_path, since):
+    """Anything for the verifier to judge after step SINCE (#172): a harness note (milestone, watchdog, watcher note,
+    item, low HP...), a map change, or a battle ending."""
+    prev = None
+    for d in tail(log_path):
+        now = d.get("now")
+        if "tool" not in d or not isinstance(now, dict):
+            continue
+        key = (json.dumps(now.get("map_id") or now.get("map")), now.get("mode"))
+        if (d.get("step") or 0) > since:
+            if any(not str(h).startswith(ROUTINE) for h in d.get("harness") or []):
+                return True
+            if prev and (key[0] != prev[0] or (prev[1] == "battle" and key[1] != "battle")):
+                return True
+        prev = key
+    return False
+
+
+def recent(log_path, n):
+    """The last N agent actions from log.jsonl, one short line each."""
+    out = []
+    for d in tail(log_path):
         if "tool" not in d or d.get("tool") in ("get_state", "get_screenshot"):
             continue
         now = d.get("now") or {}
@@ -144,8 +175,9 @@ def ask(kind, prompt, cwd=None, tools=()):
 def record(ws, entry, direct=False):
     """Usage line now; the log.jsonl line queued for the main thread (or written now, from the runner)."""
     entry = {"t": round(time.time(), 1), **entry}
-    try:
-        with open(os.path.join(ws, "usage.jsonl"), "a", encoding="utf-8") as f:
+    try:  # one writer at a time: two threads appending at once on Windows lost a line (the self-check's flake)
+        with RT.__dict__.setdefault("usage_lock", threading.Lock()), \
+                open(os.path.join(ws, "usage.jsonl"), "a", encoding="utf-8") as f:
             f.write(json.dumps({"t": round(entry["t"]), "kind": entry["harness_call"], "model": entry.get("model"),
                                 "secs": entry.get("secs"), "cost_usd": entry.get("cost_usd") or 0,
                                 "usage": entry.get("tokens"), "models": entry.pop("models", None)}) + "\n")
@@ -202,8 +234,11 @@ def tick(step, s, log_path):
         return
     if step and step % WATCH_EVERY == 0:
         spawn("watcher", review, "watcher", step, s, ws)
-    if step and step % VERIFY_EVERY == 0:
-        spawn("verifier", review, "verifier", step, s, ws)
+    # Every VERIFY_EVERY actions, and only if something happened since the last verification (#172: at every 20
+    # it was 334 calls, ~8% of a run's cost). A skipped stretch is judged with the next one.
+    if step and step % VERIFY_EVERY == 0 and eventful(log_path, getattr(RT, "verified", 0)):
+        if spawn("verifier", review, "verifier", step, s, ws):
+            RT.verified = step
     guard(ws, step)
 
 
@@ -355,18 +390,19 @@ if __name__ == "__main__":  # offline self-check with a fake claude
         f.write("# Objectives\nNow: beat Vega\n- old: reach Crater Town\n")
     with open(os.path.join(ws, "memory", "todo.md"), "w") as f:
         f.write("harness owned\n")
+    V = VERIFY_EVERY
     with open(os.path.join(ws, "log.jsonl"), "w") as f:
-        f.write(json.dumps({"step": 20, "tool": "walk_to", "args": {"x": 1, "y": 2}, "result": "done",
-                            "now": {"mode": "overworld", "map": "X", "pos": [1, 2]}, "harness": []}) + "\n")
+        f.write(json.dumps({"step": V, "tool": "walk_to", "args": {"x": 1, "y": 2}, "result": "done",
+                            "now": {"mode": "overworld", "map": "X", "pos": [1, 2]}, "harness": ["ITEM: x"]}) + "\n")
     s = {"mode": "overworld", "map": {"name": "X"}, "pos": [1, 2], "badges": 1, "party": []}
-    tick(20, s, os.path.join(ws, "log.jsonl"))
+    tick(V, s, os.path.join(ws, "log.jsonl"))
     for _ in range(100):
         if not RT.busy:
             break
         time.sleep(0.1)
     logged = []
     got = drain(logged.append)
-    assert sorted(got) == ["VERIFIER (as of step 20): objectives are stale", "WATCHER (step 20): heal Ion"], got
+    assert sorted(got) == [f"VERIFIER (as of step {V}): objectives are stale", f"WATCHER (step {V}): heal Ion"], got
     assert {e["harness_call"] for e in logged} == {"watcher", "verifier"} and all("cost_usd" in e for e in logged), logged
     kinds = [json.loads(ln)["kind"] for ln in open(os.path.join(ws, "usage.jsonl"))]
     assert sorted(kinds) == ["verifier", "watcher"], kinds

@@ -157,7 +157,8 @@ Arm the quiet monitor with the Monitor tool (30-minute maximum; re-arm on expiry
 ```
 python -u ops/watch_run.py D:\ClaudeUnboundRuns\<workspace>
 ```
-It prints only: runner alarms/tracebacks/stops, `ERROR`s from log.jsonl, `WATCHDOG` notes, failed hot reloads,
+It prints only: runner alarms/tracebacks/stops, `ERROR`s from log.jsonl, `WATCHDOG` notes, `ALERT` lines (a third
+watchdog on one map within 200 actions, with the agent's loop, #171), failed hot reloads,
 badges, and `RUNNER STOPPED` when no runner process is left. Each line is an alert for section 3.
 
 Useful reads:

@@ -119,9 +119,9 @@ Escalate in that order: if the verifier says ESCALATE, go to the strategist; if 
 
 Action results include a `harness` list. Act on it:
 
-- **WATCHDOG**: nothing has changed for a while. Stop, screenshot, re-read objectives, and try something genuinely different. Don't repeat what just failed.
+- **WATCHDOG**: nothing has changed for a while. Stop, screenshot, re-read objectives, and try something genuinely different. Don't repeat what just failed. **WATCHDOG (#3 on <map> ...)** means the same advice has already failed twice there: it names your loop (your last two actions); do not repeat that pair, take a different action or switch to a different goal. If you are grinding or EV training there on purpose, carry on.
 - **VERIFY before answering**: the prompt on screen looks irreversible. Hand the verifier subagent what you plan to answer and why, and get its approval first; game actions are blocked a few actions later until it has recorded its check.
-- **WATCHER (step N)** / **VERIFIER (as of step N)**: the harness reviews your play in the background (a watcher every ~10 actions, a verifier every ~20) and sends a correction only when one is needed. It refers to step N, a few actions back: apply it now if it still holds (reroute, heal, restock, fix a belief in memory/), and keep playing. Don't spawn the verifier for routine checks.
+- **WATCHER (step N)** / **VERIFIER (as of step N)**: the harness reviews your play in the background (a watcher every ~10 actions, a verifier every ~40 when something happened) and sends a correction only when one is needed. It refers to step N, a few actions back: apply it now if it still holds (reroute, heal, restock, fix a belief in memory/), and keep playing. Don't spawn the verifier for routine checks.
 - **LEARNING CHECK**: hand the last stretch to the `refiner` subagent (Task/Agent tool) with a short summary of what happened. It updates `memory/` (objectives, learnings, notes) and critiques your approach. Then follow its advice.
 - **INSTRUCTIONS UPDATED**: this file changed. Read `CLAUDE.md` again (at least the named sections) and follow the new version.
 - **HARNESS UPDATED**: the tools were fixed or improved mid-run; a tool that failed before may work now. **HARNESS UPDATE FAILED**: the old tools are still running; carry on.

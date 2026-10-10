@@ -50,6 +50,8 @@ while True:
         where = f"{now.get('map')} {now.get('map_id')} {now.get('pos')} {now.get('mode')}"
         if "FAILED" in str(e.get("harness_reload", "")):
             print(f"RELOAD FAILED: {e['harness_reload'][:200]}", flush=True)
+        if e.get("operator_alert"):  # a watchdog repeated on one map (#171)
+            print(f"ALERT step {e.get('step')}: {str(e['operator_alert'])[:220]}", flush=True)
         if e.get("error"):
             print(f"ERROR step {e.get('step')} {e.get('tool')}: {str(e['error'])[:200]} | {where}", flush=True)
         for n in e.get("harness") or []:
