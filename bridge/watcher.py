@@ -28,6 +28,8 @@ import types
 CLAUDE = os.environ.get("UNBOUND_CLAUDE") or shutil.which("claude") or os.path.expanduser(r"~\.local\bin\claude.exe")
 MODELS = {"watcher": "claude-haiku-5-5", "verifier": "claude-sonnet-5-5"}
 TIMEOUT = {"watcher": 90, "verifier": 150}
+# Thinking effort per call (#177: the watcher's output, ~0.40M tokens a run, was nearly all thinking for <=2 notes).
+EFFORT = {"watcher": "low"}
 WATCH_EVERY, VERIFY_EVERY = 10, 40
 DEDUPE_WINDOW = 10
 # Never deduped: WATCHDOG and prompts that need an answer; ITEM/MISSED already fire once per item, door or visit.
@@ -156,6 +158,8 @@ def ask(kind, prompt, cwd=None, tools=()):
         CLAUDE, "-p", "--model", MODELS[kind], "--output-format", "json", "--no-session-persistence",
         "--strict-mcp-config", "--mcp-config", '{"mcpServers":{}}', "--setting-sources", "", "--restricted",
         "--system-prompt", SYSTEM[kind], "--tools", ",".join(tools)]
+    if kind in EFFORT:
+        args += ["--effort", EFFORT[kind]]
     if tools:
         args += ["--allowedTools", *tools]
     t0 = time.time()
@@ -381,8 +385,11 @@ if __name__ == "__main__":  # offline self-check with a fake claude
     tmp = tempfile.mkdtemp(prefix="watcher-check-")
     fake = os.path.join(tmp, "fake_claude.py")
     with open(fake, "w") as f:
+        # the effort flag is checked too (#177): low for the watcher, none (the CLI default) for the verifier
         f.write("import json, os, sys\nsys.stdin.read()\nm = sys.argv[sys.argv.index('--model') + 1]\n"
-                "r = 'NOTE: heal Ion' if 'haiku' in m else 'FIX: objectives are stale'\n"
+                "e = sys.argv[sys.argv.index('--effort') + 1] if '--effort' in sys.argv else None\n"
+                "r = ('NOTE: heal Ion' if e == 'low' else 'NOTE: wrong effort') if 'haiku' in m else "
+                "('FIX: objectives are stale' if e is None else 'FIX: wrong effort')\n"
                 "print(json.dumps({'result': r, 'is_error': False, 'total_cost_usd': 0.001, 'usage': {'output_tokens': 5}}))\n")
     CLAUDE = fake
     ws = os.path.join(tmp, "ws")

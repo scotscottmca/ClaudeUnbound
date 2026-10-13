@@ -27,7 +27,7 @@
       "mcp__unbound__wiki_read"
     ],
     "model": "claude-fable-5-1",
-    "effort": "high"
+    "effort": "medium"
   },
   "refiner": {
     "description": "Run at every LEARNING CHECK: reviews the last stretch of play, updates memory/, critiques the approach.",

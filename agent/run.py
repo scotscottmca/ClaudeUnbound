@@ -27,7 +27,9 @@ from probe import Probe  # noqa: E402
 from state import get_state  # noqa: E402
 
 CLAUDE = shutil.which("claude") or os.path.expanduser(r"~\.local\bin\claude.exe")
-CONTEXT_LIMIT = 160_000  # rotate to a fresh session past this (tokens re-read every turn)
+# Rotate to a fresh session past this (#179: every turn re-reads the whole context; median 108k a turn at 160k).
+# A fresh session costs ~36k fixed plus ~10k of memory reads, so 80k still leaves ~35k of play per session.
+CONTEXT_LIMIT = 80_000
 # Entering another town also rotates (#175: cache reads reached 4-22M tokens a chunk), once the session holds this much.
 TOWN_ROTATE_MIN = 40_000
 TOWN = re.compile(r" (Town|City|Village)$|^Frozen Heights$")
@@ -170,13 +172,15 @@ def chunk(ws, first, prompt_next, prompt_first=FIRST, badges=None):
             # After one of the player's own tool results (not a subagent's) and past the floor: check where it is.
             player_turn = ev.get("type") == "user" and not ev.get("parent_tool_use_id")
             now = last_now(ws) if player_turn and context > TOWN_ROTATE_MIN else {}
-            if now.get("mode") == "overworld" and (context > CONTEXT_LIMIT or new_town(town, now.get("map") or "")):
+            reason = rotate_reason(context, now, town)
+            if reason:
                 # Every turn re-reads the whole conversation (#54: ~300k tokens a turn after 400 actions).
                 # Between actions and out of battle, end the chunk; the next one starts fresh from memory/.
-                print(f"  context {context // 1000}k on {now.get('map')}: rotating to a fresh session")
+                print(f"  context {context // 1000}k on {now.get('map')} ({reason}): rotating to a fresh session")
                 proc.terminate()
                 proc.wait()
-                return ({"rotated": True, "result": f"rotated at {context} context tokens", "usage": tokens,
+                return ({"rotated": {"reason": reason, "context": context, "map": now.get("map")},
+                         "result": f"rotated ({reason}) at {context} context tokens", "usage": tokens,
                          "total_cost_usd": None}, time.time() - started)
             if ev.get("type") == "assistant":
                 u = ev["message"].get("usage") or {}
@@ -197,6 +201,17 @@ def chunk(ws, first, prompt_next, prompt_first=FIRST, badges=None):
                 result = ev
         proc.wait()
     return result or {"is_error": True, "result": f"no result (exit {proc.returncode})"}, time.time() - started
+
+
+def rotate_reason(context, now, town):
+    """Why the player's session should rotate now ("context" / "town"), or None. CONTEXT: the session's context
+    tokens; NOW: last_now() after one of the player's own tool results ({} between them or below TOWN_ROTATE_MIN);
+    TOWN: the map the chunk started on. Only in the overworld: never in battle, dialog or a menu ("other")."""
+    if now.get("mode") != "overworld" or context <= TOWN_ROTATE_MIN:
+        return None
+    if context > CONTEXT_LIMIT:
+        return "context"
+    return "town" if new_town(town, now.get("map") or "") else None
 
 
 def new_town(town, here):
@@ -324,7 +339,7 @@ def main():
         entry = {"t": round(time.time()), "chunk": n, "secs": round(secs), "turns": res.get("num_turns"),
                  "is_error": res.get("is_error"), "usage": res.get("usage"), "cost_usd": res.get("total_cost_usd", 0),
                  "models": res.get("modelUsage"), "milestone": milestone(), "note": text[-300:],
-                 "session_start": first, "chunk_cost_usd": chunk_cost(res.get("total_cost_usd", 0) or 0, session_total)}
+                 "session_start": first, "rotated": res.get("rotated"), "chunk_cost_usd":chunk_cost(res.get("total_cost_usd", 0) or 0, session_total)}
         session_total = res.get("total_cost_usd", 0) or session_total
         with open(usage_log, "a", encoding="utf-8") as f:
             f.write(json.dumps(entry) + "\n")

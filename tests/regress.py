@@ -743,6 +743,23 @@ def runner_escalation_cap():
 
 
 @case(emu=False)
+def runner_rotation():
+    # #179: past CONTEXT_LIMIT the player's session rotates, but only in the overworld (never battle, dialog or a
+    # menu, "other"), and only after a player tool result (now is {} otherwise). The #175 town rule still applies.
+    import run
+    big, mid = run.CONTEXT_LIMIT + 1, run.TOWN_ROTATE_MIN + 1
+    ow = {"mode": "overworld", "map": "Route 2"}
+    assert run.CONTEXT_LIMIT == 80_000 and run.rotate_reason(big, ow, "Route 2") == "context"
+    assert run.rotate_reason(run.CONTEXT_LIMIT, ow, "Route 2") is None and run.rotate_reason(mid, ow, "Route 2") is None
+    for mode in ("battle", "dialog", "other"):
+        assert run.rotate_reason(big, dict(ow, mode=mode), "Route 2") is None, mode
+        assert run.rotate_reason(mid, {"mode": mode, "map": "Bellin Town"}, "Route 2") is None, mode
+    assert run.rotate_reason(big, {}, "Route 2") is None  # between the player's own tool results
+    assert run.rotate_reason(mid, {"mode": "overworld", "map": "Bellin Town"}, "Route 2") == "town"
+    assert run.rotate_reason(run.TOWN_ROTATE_MIN, {"mode": "overworld", "map": "Bellin Town"}, "Route 2") is None
+
+
+@case(emu=False)
 def stats_self_check():
     import stats
     stats._selftest()
