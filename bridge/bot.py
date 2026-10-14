@@ -34,6 +34,15 @@ SIDE_STAIRS = {(0xB4, "RIGHT"): (1, -1), (0xB5, "LEFT"): (-1, 1)}
 # walk_to (Crater Town (28,24) LEFT onto 0xB2, likely another sideways-stair variant) and planned around from then
 # on. Kept in sys.modules so a hot reload doesn't forget them.
 NO_MOVE = sys.modules.setdefault("_unbound_no_move", types.SimpleNamespace(maps={})).maps
+NO_MOVE_CAP = 32  # per map: a wrongly learned move (an unseen blocker) can't pile up forever
+
+
+def remember_no_move(map_key, move):
+    """Record a refused (x, y, key) on MAP_KEY (group, num). The MCP server persists NO_MOVE (#146)."""
+    s, move = NO_MOVE.setdefault(tuple(map_key), set()), tuple(move)
+    if move not in s and len(s) >= NO_MOVE_CAP:
+        s.pop()  # ponytail: evicts an arbitrary entry, keep insertion order if the cap is ever hit in practice
+    s.add(move)
 MAX_STEPS = 600
 POCKET = 30  # an arrival area this small (tiles reachable) is a dead end, not the place itself
 DEAD_EDGES_FILE = None  # set by the MCP server: map-edge tiles learned to lead into a pocket

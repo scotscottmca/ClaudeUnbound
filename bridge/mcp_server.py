@@ -179,6 +179,7 @@ def watchdog(s, text):
 def persist():
     d = {k: globals()[k] for k in PERSIST}
     d["arrivals"] = list(arrivals)
+    d["no_move"] = [[*m, *mv] for m, moves_ in bot.NO_MOVE.items() for mv in moves_]  # [group, num, x, y, key]
     with open(STATE_FILE + ".tmp", "w", encoding="utf-8") as f:
         json.dump(d, f, ensure_ascii=False)
     os.replace(STATE_FILE + ".tmp", STATE_FILE)
@@ -189,6 +190,8 @@ def restore():
         d = json.load(open(STATE_FILE, encoding="utf-8"))
         globals().update({k: d[k] for k in PERSIST if k in d})
         arrivals.extend((g, n, tuple(xy)) for g, n, xy in d.get("arrivals", []))
+        for g, n, x, y, key in d.get("no_move", []):
+            bot.remember_no_move((g, n), (x, y, key))
 
 
 REPO_INSTRUCTIONS = os.path.join(HERE, "..", "agent", "CLAUDE.md")
@@ -591,7 +594,7 @@ def t_walk_to(a):
                 refused += 1
                 to = bot.landing(w, *w["player"], path[0])
                 if not any(abs(n["x"] - to[0]) + abs(n["y"] - to[1]) <= 1 for n in w["npcs"]):  # an NPC: just in the way
-                    bot.NO_MOVE.setdefault(here_map, set()).add((*w["player"], path[0]))
+                    bot.remember_no_move(here_map, (*w["player"], path[0]))
                 print(f"blocked going {path[0]} from {w['player']} (tile behavior 0x{w['tile'](*w['player'])[0]:X}): "
                       "remembered, planning around it")
                 if refused >= 3:

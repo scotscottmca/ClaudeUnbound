@@ -12,6 +12,7 @@ it only through the harness-gated wiki_walkthrough tool, when really stuck (user
 may be written to memory (watcher.guard deletes lines copied from it).
 """
 import json
+import math
 import re
 import sqlite3
 import sys
@@ -262,13 +263,18 @@ def sections_for(place=None, query="", n=4, budget=8000):
     secs = [s for s in json.loads(LR_DIGEST.read_text(encoding="utf-8")) if len(s["text"]) >= 300]  # not TOC scraps
     terms = [t.lower() for t in re.findall(r"\w+", query) if len(t) > 2]
     core = re.sub(r"\s+(City|Town|Village|Island|Isle)$", "", place or "").lower()  # "Fallshore Gym" is about Fallshore City
+    # A term's weight is its rarity: "gym"/"puzzle" are in every gym section, so raw counts let a long Dehara gym
+    # section outrank "Fallshore gym puzzle" (#159). Counts are capped; a term in the heading or page title counts most.
+    idf = {t: math.log(len(secs) / (1 + sum(t in (s["heading"] + s["page"] + s["text"]).lower() for s in secs)))
+           for t in terms}
 
     def score(s):
         named = core and (core in s["heading"].lower() or core in s["page"].lower())
         here = place and (place in s["places"] or named)
+        head = (s["heading"] + " " + s["page"]).lower()
         return ((50 if named or (place and place in s["head_places"]) else 10 if here else 0)
                 + (40 if s["key"] and (here or not place) else 0)
-                + sum(s["text"].lower().count(t) + 5 * (t in s["heading"].lower()) for t in terms))
+                + sum(max(idf[t], 0.1) * (min(s["text"].lower().count(t), 3) + 5 * (t in head)) for t in terms))
 
     out, used = [], 0
     for s in sorted((s for s in secs if score(s) > 0), key=score, reverse=True)[:n]:

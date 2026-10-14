@@ -789,6 +789,54 @@ def planner_no_move():
     assert bot.plan(w, {(2, 0)}, set()) == ["RIGHT", "RIGHT"]
     w["no_move"] = {(0, 0, "RIGHT")}
     assert bot.plan(w, {(2, 0)}, set()) == ["DOWN", "RIGHT", "RIGHT", "UP"]
+    # Learned moves survive a server restart (server_state.json) and stay bounded per map (#146).
+    saved = {k: set(v) for k, v in bot.NO_MOVE.items()}
+    try:
+        bot.NO_MOVE.clear()
+        for i in range(bot.NO_MOVE_CAP + 5):
+            bot.remember_no_move((9, 9), (i, 0, "LEFT"))
+        bot.remember_no_move([3, 74], [28, 24, "LEFT"])  # JSON gives lists
+        assert len(bot.NO_MOVE[(9, 9)]) == bot.NO_MOVE_CAP, len(bot.NO_MOVE[(9, 9)])
+        M.persist()
+        bot.NO_MOVE.clear()
+        M.restore()
+        assert bot.NO_MOVE[(3, 74)] == {(28, 24, "LEFT")} and len(bot.NO_MOVE[(9, 9)]) == bot.NO_MOVE_CAP, bot.NO_MOVE
+    finally:
+        bot.NO_MOVE.clear()
+        bot.NO_MOVE.update(saved)
+
+
+@case(emu=False)
+def item_names():
+    # Long item names are ROM pointers in the table entry; decoding the pointer bytes as text garbled 33 of them (#164).
+    from state import NAMES
+    items_ = NAMES["items"]
+    assert [i for i, n in enumerate(items_) if "?" in n] == [0, 347], [(i, n) for i, n in enumerate(items_) if "?" in n]
+    assert (items_[261], items_[88], items_[44]) == ("Dowsing Machine", "Wishing Piece", "Berry Juice"), items_[261]
+
+
+@case(emu=False)
+def walkthrough_ranking():
+    # "Fallshore gym puzzle" served Dehara's gym puzzle: raw counts of the common words "gym"/"puzzle" in a long
+    # section beat the one word that names the place, which is only in the heading/page title (#159).
+    import json, pathlib, wiki
+    pad = "x " * 150
+
+    def sec(page, heading, text, places=()):
+        return {"page": page, "url": "", "heading": heading, "text": text + pad, "places": list(places),
+                "head_places": list(places), "key": "puzzle" in heading.lower()}
+    secs = [sec("Dehara Gym (Part 20)", "Dehara Gym > Gym Puzzle Layout", "gym " * 11 + "puzzle " * 4),
+            sec("Fallshore Gym (Part 14)", "Fall Badge > Gym Puzzle (Step-by-Step)", "gym " * 6),
+            sec("Route 9", "Route 9 > Items", "fallshore is north")]
+    secs += [sec(f"Town {i} Gym", f"Town {i} Gym > Gym Puzzle", "gym puzzle") for i in range(6)]
+    f, old = pathlib.Path(TMP) / "sections.json", wiki.LR_DIGEST
+    f.write_text(json.dumps(secs), encoding="utf-8")
+    wiki.LR_DIGEST = f
+    try:
+        top = wiki.sections_for(None, "Fallshore gym puzzle")[0]
+        assert top.startswith("[Fallshore Gym (Part 14) > Fall Badge > Gym Puzzle (Step-by-Step)]"), top[:80]
+    finally:
+        wiki.LR_DIGEST = old
 
 
 @case(emu=False)
