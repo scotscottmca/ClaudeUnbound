@@ -148,6 +148,9 @@ def chunk(ws, first, prompt_next, prompt_first=FIRST, badges=None):
     print(f"  model: {model}, effort: {effort}" + (" (expert used for this gym: blocked)" if capped else ""))
     args = [CLAUDE, "-p", prompt_first if first else prompt_next, "--model", model, "--effort", effort,
             "--mcp-config", "mcp.json", "--strict-mcp-config",
+            # No user-level setup (#180): its plugins' SessionStart hook, skills and agents cost ~8k input tokens a
+            # request. The workspace CLAUDE.md, mcp.json and --agents still load.
+            "--setting-sources", "project,local",
             "--agents", open(os.path.join(REPO, "agent", "agents.json"), encoding="utf-8").read(),
             "--allowedTools", *TOOLS,
             "--disallowedTools", *BLOCKED, *(["Agent(expert)", "Task(expert)"] if capped else []),
