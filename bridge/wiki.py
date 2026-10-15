@@ -5,7 +5,8 @@ python wiki.py index                 build wiki/index.sqlite (FTS5) from the cac
 python wiki.py search "query" [N]    top N hits: url, title, snippet
 python wiki.py read URL_OR_SLUG      print a page's text
 python wiki.py crawl-lastresort      fetch walkthrough/ and gyms/ into wiki/lastresort_pages/ (kept apart)
-python wiki.py index-lastresort      build wiki/lastresort.sqlite and the per-section index lastresort_sections.json
+python wiki.py index-lastresort      build wiki/lastresort.sqlite, the per-section index lastresort_sections.json and outline.json
+python wiki.py outline               rebuild wiki/outline.json only (places, order, badge and HM gates; no routes, #181)
 
 The last-resort corpus (walkthrough, gyms) is separate on purpose: wiki_search/wiki_read never see it. The agent gets
 it only through the harness-gated wiki_walkthrough tool, when really stuck (user, 2026-10-09), and nothing from it
@@ -285,7 +286,110 @@ def sections_for(place=None, query="", n=4, budget=8000):
     return out
 
 
+LR_OUTLINE = ROOT / "outline.json"
+# Directions are the agent's own work (#181): an outline line that reads like one is dropped when building and must
+# never be served. Lower-case compass words only, so names like "East Borrius" or "Northwest Chamber" pass.
+STEPLIKE = re.compile(r"(?i:\bwalk(?!through))|\b(?:north|south|east|west|left|right)(?:ward)?s?\b|(?i:\b(?:go|head|move)\s+(?:up|down)\b)"
+                      r"|\(\s*\d+\s*,\s*\d+\s*\)"
+                      r"|\b\d+\s+(?:steps|tiles|spaces)\b|^\s*\d+[.)]\s", re.M)
+# Generic stops, and the ways in and out of a place (ladders, exits, shortcuts): those are route, not outline.
+GENERIC_POI = re.compile(r"(?i)pok[eé]\s?mon center|pok[eé]\s?mart|^mart$|raid den|^items?$|requires hm|ladder|stair"
+                         r"|entrance|exit|passage|shortcut|teleporter|\bpath\b|\bside\b")
+HM_NAME = r"([A-Z]\w+(?: (?:Smash|Climb))?)"
+
+
+def outline():
+    """Build wiki/outline.json from the walkthrough pages (#181): per part, in story order, the places it covers, the
+    named objectives (its Quick Guide), the gym, people and places of interest, the badge count and the HMs usable on
+    arrival, and HMs its places need that you don't have yet. No routes: step-like lines are dropped."""
+    mapsecs = json.load(open(Path(__file__).with_name("names.json"), encoding="utf-8"))["mapsecs"].values()
+    # "Thundercap Mt." is "Thundercap Mountain" in the text, and "Fallshore Gym" is in Fallshore City.
+    places = {n: re.compile(r"(?<!\w)(?:" + re.escape(n.replace(" Mt.", " Mountain").replace(" Dept.", " Department")) + "|"
+                            + re.escape(re.sub(r" (?:City|Town|Village)$", "", n)) + r"(?: Town)? Gym)(?!\w)", re.I)
+              for n in set(mapsecs) if len(n) > 3 and not n.isupper()}
+    parts = sorted(LR_PAGES.glob("walkthrough__part-*.json"), key=lambda f: int(f.stem.rsplit("-", 1)[1]))
+    out, got, allowed = [], {}, {}
+    for f in parts:
+        page = json.loads(f.read_text(encoding="utf-8"))
+        n, text = int(f.stem.rsplit("-", 1)[1]), page["text"]
+        title = re.sub(r":\s*Pok\S*mon Unbound Walkthrough.*", "", page["title"])
+        heads = [ln.lstrip("# ") for ln in text.splitlines() if ln.startswith("#") and "Found an error" not in ln]
+        guide = text[text.find("Quick Guide"):]
+        guide = guide[:guide.find("\n## ")] if "\n## " in guide else ""
+        goals = [ln[2:].strip() for ln in guide.splitlines() if ln.startswith("- ")]
+        poi, rows = [], iter(text.splitlines())
+        for ln in rows:
+            if ln.strip() == "| Points of Interest |":
+                for row in rows:
+                    m = re.fullmatch(r"\|\s*\|\s*(.+?)\s*\|", row.strip())
+                    if not m:
+                        break
+                    if not GENERIC_POI.search(m.group(1)) and m.group(1) not in poi and m.group(1) not in places:
+                        poi.append(m.group(1))
+        gym = next((m.groups() for h in heads for m in [re.match(r"(.+? Gym) – (\w+) Badge", h)] if m), None)
+        leader = next((m.group(1) for ln in text.splitlines() for m in [re.match(r"#+ .*Gym Leader(?: –)? (.+)", ln)]
+                       if m), None)
+        for g in goals:
+            for hm in re.findall(r"(?i:obtain|acquire|get)\s+HM0\d " + HM_NAME, g):
+                got.setdefault(hm, n)
+            for hm in re.findall(r"Permission to Use HM0\d " + HM_NAME, g) + re.findall(r"(?i:obtain|get)\s+" + HM_NAME
+                                                                                       + r" Permission", g):
+                allowed[hm] = n
+        out.append({"part": n, "title": title,
+                    "places": sorted(p for p, rx in places.items() if any(rx.search(h) for h in [title] + heads + goals)),
+                    "objectives": [g for g in goals if not STEPLIKE.search(g)],
+                    "gym": f"{gym[0]}, {gym[1]} Badge" + (f" (leader {leader})" if leader else "") if gym else None,
+                    "people_places": [x for x in poi if not STEPLIKE.search(x)][:8],
+                    "requires": sorted(set(re.findall(r"Requires HM " + HM_NAME, text)))})
+    badges = []
+    for e in out:  # gates on arrival: badges won and HMs usable before this part
+        e["badges"] = list(badges)
+        e["hms"] = sorted(hm for hm, k in got.items() if max(k, allowed.get(hm, 0)) < e["part"])
+        if e["gym"]:
+            badges.append(e["gym"].split(", ")[1].split(" Badge")[0])
+    for e, nxt in zip(out, out[1:] + out[-1:]):  # what its places need beyond what you can use when you move on
+        e["later"] = [hm for hm in e.pop("requires") if hm not in nxt["hms"]]
+    LR_OUTLINE.write_text(json.dumps(out, ensure_ascii=False, indent=0), encoding="utf-8")
+    print(f"outline: {len(out)} parts, {len({p for e in out for p in e['places']})} places into {LR_OUTLINE}")
+
+
+def render_outline(e):
+    """One outline entry as text: what is there and its gates, never how to get there."""
+    lines = [f"Part {e['part']}: {e['title']}. Gate on arrival: {len(e['badges'])} badge(s)"
+             + (f" ({', '.join(e['badges'])})" if e["badges"] else "") + "; HMs usable: " + (", ".join(e["hms"]) or "none") + "."]
+    if e["gym"]:
+        lines.append(f"   Gym: {e['gym']}.")
+    lines.append("   Objectives: " + "; ".join(e["objectives"]) + ".")
+    if e["people_places"]:
+        lines.append("   People and places: " + "; ".join(e["people_places"]) + ".")
+    if e["later"]:
+        lines.append("   Parts of it need an HM you get later: " + ", ".join(e["later"]) + ".")
+    return "\n".join(lines)
+
+
+def outline_for(place, badges, n=4):
+    """The outline from where you are: the first part covering PLACE entered with your badge count, else the last one
+    entered with fewer, else the first part entered with your badge count; then the next N-1 parts, as text. None if
+    there is no outline."""
+    if not LR_OUTLINE.exists():
+        return None
+    out = json.loads(LR_OUTLINE.read_text(encoding="utf-8"))
+    here = [i for i, e in enumerate(out) if place in e["places"]]
+    same = [i for i in here if len(out[i]["badges"]) == badges]
+    fewer = [i for i in here if len(out[i]["badges"]) < badges]
+    i = same[0] if same else fewer[-1] if fewer else here[0] if here else next(
+        (i for i, e in enumerate(out) if len(e["badges"]) >= badges), len(out) - 1)
+    return ("Walkthrough outline: the order of places and what each needs, from where you are. It has no routes: "
+            "work out the way yourself.\n" + "\n".join(render_outline(e) for e in out[i:i + n]))
+
+
 def _selftest():
+    assert STEPLIKE.search("Walk two tiles") and STEPLIKE.search("head north") and STEPLIKE.search("at (12, 7)")
+    assert STEPLIKE.search("1. Go to the door") and STEPLIKE.search("take 3 steps")
+    assert not any(STEPLIKE.search(s) for s in ("Sail to East Borrius", "Explore the Northwest Chamber",
+                                                "Climb the Upper Ascent", "Obtain HM06 Rock Smash"))
+    assert render_outline({"part": 9, "title": "T", "badges": ["Leaf"], "hms": [], "gym": None, "objectives": ["A"],
+                           "people_places": [], "later": ["Strength"]}).endswith("HM you get later: Strength.")
     assert strip_excluded("## Trainers\nA\n## Missions\nsecret\n### Sub\nmore\n## Vendors\nB") == \
         "## Trainers\nA\n## Vendors\nB"
     html = ('<nav>menu</nav><h1>Snorunt</h1><div class="text-content"><h2>Abilities</h2><p>Inner&nbsp;Focus</p>'
@@ -315,6 +419,9 @@ if __name__ == "__main__":
     elif cmd == "index-lastresort":
         index(LAST_RESORT_SECTIONS, LR_PAGES, LR_DB)
         digest()
+        outline()
+    elif cmd == "outline":
+        outline()
     elif cmd == "search" and args:
         for h in search(args[0], int(args[1]) if len(args) > 1 else 5):
             print(f"{h['url']}\n  {h['title']} [{h['section']}]\n  {h['snippet']}\n")

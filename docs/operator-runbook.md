@@ -136,12 +136,16 @@ Anything that edits code, `agent/CLAUDE.md`, `agent/agents.json` or docs that ch
 
 **The playing agent's information rules**
 - Wiki: `wiki_search`/`wiki_read` cover only pokemon/items/locations. The walkthrough is a last resort behind the
-  harness gate (`wiki_walkthrough`, #153/#160): 150 actions without progress (new map, badge, or new operator hint),
+  harness gate (`wiki_walkthrough`, #153/#160): 150 actions without progress (new map, badge, or a new operator hint
+  with information, #182),
   2+ watchdogs, strategist and expert consulted. Nothing from the walkthrough may enter `memory/` (the harness
   deletes copied lines). Don't hand walkthrough content to the agent any other way.
 - Operator hints: append a line to `<workspace>\operator.md` (e.g. `D:\ClaudeUnboundRuns\full1\operator.md`). The
   harness copies it into the agent's `memory/operator.md` (pinned) and announces new lines as `OPERATOR HINT` in the
-  agent's next tool result (#154). A new hint restarts the walkthrough gate's clock. Use the human's words.
+  agent's next tool result (#154). A new hint restarts the walkthrough gate's clock, unless every line of it only
+  redirects (it says stop, give up, abandon, for later, move on, or names the walkthrough; #182). Use the human's words.
+  With no query the walkthrough serves an outline (order of places, badge and HM gates, no routes; #181), built
+  offline by `python bridge/wiki.py outline` into the gitignored `wiki/outline.json`.
 - Rival name: Copilot.
 
 **Cost**

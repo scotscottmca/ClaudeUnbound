@@ -786,11 +786,22 @@ def t_wiki_search(a):
 # Last resort (user, 2026-10-09): the walkthrough may be read only when really stuck and escalation failed, and
 # nothing from it may go into memory/ (watcher.guard deletes copied lines). The gate below is what "really stuck" means.
 STUCK_ACTIONS, STUCK_WATCHDOGS = 150, 2
+# A hint that only redirects (stop a path, leave it for later, try the walkthrough) is no fresh start (#182): one
+# such hint closed an open gate (3,169 actions, 13 watchdogs) for another 150 actions.
+REDIRECT = re.compile(r"walkthrough|\bstop\b|\bgive up\b|\babandon|\bfor later\b|\bmove on\b", re.I)
+
+
+def is_redirect(hint):
+    """True if every line of an OPERATOR HINT note (lines joined by ' | ') only redirects the agent."""
+    return all(REDIRECT.search(ln) for ln in hint.split(" | ") if ln.strip())
 
 
 def stuck_evidence():
-    """(unmet conditions, facts) for the walkthrough gate: no progress (new map, badge, or a new operator hint) for STUCK_ACTIONS actions,
-    STUCK_WATCHDOGS watchdog notes since, and both the strategist and the expert consulted since (transcripts)."""
+    """(unmet conditions, facts) for the walkthrough gate: no progress (new map, badge, or an operator hint with new
+    information, as announced in log.jsonl) for STUCK_ACTIONS actions, STUCK_WATCHDOGS watchdog notes since, and both
+    the strategist and the expert consulted since (transcripts).
+    ponytail: a hint written while no MCP server runs is read at session start but never announced, so it doesn't
+    restart the clock; that errs toward opening the gate."""
     ws = os.path.dirname(LOG)
     progress_step, progress_t, badge_t = 0, 0.0, 0.0
     if os.path.exists(tracker.path):
@@ -800,27 +811,22 @@ def stuck_evidence():
                 progress_step, progress_t = e.get("step") or 0, e.get("t") or 0.0
             if e["kind"] == "badge":
                 badge_t = e.get("t") or 0.0
-    hint = os.path.join(ws, "operator.md")  # a new operator hint is a fresh start: try it before the walkthrough
-    if os.path.exists(hint) and os.path.getmtime(hint) > progress_t:
-        progress_t = os.path.getmtime(hint)
-        with open(LOG, encoding="utf-8", errors="replace") as f:
-            for line in f:
-                m = re.match(r'\{"t": ([0-9.]+), "step": (\d+)', line)
-                if m and float(m.group(1)) >= progress_t:
-                    progress_step = int(m.group(2))
-                    break
-            else:
-                progress_step = steps
-    dogs = 0
+    dog_steps = []
     with open(LOG, encoding="utf-8", errors="replace") as f:
         for line in f:
-            if "WATCHDOG" in line:
-                try:
-                    e = json.loads(line)
-                except ValueError:
-                    continue
-                if (e.get("step") or 0) > progress_step and any(n.startswith("WATCHDOG") for n in e.get("harness") or []):
-                    dogs += 1
+            if "WATCHDOG" not in line and "OPERATOR HINT" not in line:
+                continue
+            try:
+                e = json.loads(line)
+            except ValueError:
+                continue
+            notes = e.get("harness") or []
+            if any(n.startswith("WATCHDOG") for n in notes):
+                dog_steps.append(e.get("step") or 0)
+            hints = [n.split("): ", 1)[-1] for n in notes if n.startswith("OPERATOR HINT")]
+            if any(not is_redirect(h) for h in hints) and (e.get("t") or 0.0) > progress_t:
+                progress_step, progress_t = e.get("step") or 0, e.get("t") or 0.0  # a new hint: try it first
+    dogs = sum(s > progress_step for s in dog_steps)
     asked = set()
     # The expert is capped at one call per gym (#173: the runner blocks a second until the next badge), so one since
     # the last badge counts; otherwise the gate could never open after the expert was asked before the last new map.
@@ -852,10 +858,19 @@ def t_wiki_walkthrough(a):
     if unmet:
         return {"refused": "the walkthrough is a last resort, for when you are really stuck and escalation failed. "
                            "Not yet: " + "; ".join(unmet) + ".", **facts}
-    # Served from the per-section index (#160): with no query, the sections about where you are (puzzle and
-    # step-by-step headings first); a query narrows or redirects it. Whole sections, never keyword fragments (#159).
-    place = state_mod.get_state(p)["map"]["name"]
+    # With no query, the outline from where you are (#181): the order of places, what each holds, its badge and HM
+    # gates, and no routes. A query gets whole sections from the per-section index (#160, #159).
+    s = state_mod.get_state(p)
+    place = s["map"]["name"]
     query = (a.get("query") or "").strip()
+    rule = ("Use this to get unstuck now. Do NOT write anything from it into memory/ (the harness deletes such lines). "
+            "Record only what you then verify yourself in play, in your own words.")
+    text = None if query else wiki.outline_for(place, s.get("badges", 0))
+    if text:
+        watcher.forbid(os.path.dirname(LOG), text)
+        log({"step": steps, "walkthrough": f"(outline: {place})", "reason": reason[:300], **facts})
+        return {"outline": text, "more": "for one puzzle, person or place in detail, call again with 'query'",
+                "rule": rule}
     secs = wiki.sections_for(None if query else place, query)
     if not secs:
         return {"result": f"nothing in the walkthrough about {place!r}" + (f" or {query!r}" if query else "")
@@ -864,9 +879,7 @@ def t_wiki_walkthrough(a):
     watcher.forbid(os.path.dirname(LOG), text)  # memory/ may not keep anything from it
     log({"step": steps, "walkthrough": query or f"(here: {place})", "reason": reason[:300],
          "sections": [t.split("\n", 1)[0] for t in secs], **facts})
-    return {"sections": secs,
-            "rule": "Use this to get unstuck now. Do NOT write anything from it into memory/ (the harness deletes such "
-                    "lines). Record only what you then verify yourself in play, in your own words."}
+    return {"sections": secs, "rule": rule}
 
 
 def t_wiki_read(a):
@@ -1005,12 +1018,13 @@ TOOLS = {
                     "trainers, wild Pokémon). No walkthrough or missions: work those out yourself.",
                     S({"query": {"type": "string"}, "n": {"type": "integer"}}, ["query"]), False),
     "wiki_walkthrough": (t_wiki_walkthrough, "LAST RESORT, only when really stuck: escalation to the strategist and "
-                         "the expert failed, the watchdog keeps firing and you have made no progress for a long time. Searches "
-                         "the game's walkthrough (indexed by section) and returns the sections about where you are (or your query). The harness refuses until that is "
+                         "the expert failed, the watchdog keeps firing and you have made no progress for a long time. With no "
+                         "query: an outline of the game from where you are (the next places in order, what is there, the badge "
+                         "and HMs each needs; no routes). With a query: the walkthrough sections about it. The harness refuses until that is "
                          "true and says what is missing. Nothing from it may be written to memory/: the harness deletes "
                          "such lines.",
                          S({"query": {"type": "string", "description": "optional: a place, person or puzzle, e.g. 'Fallshore gym "
-                                      "Lapras'. Leave it out to get the sections about where you are now."},
+                                      "Lapras'. Leave it out to get the outline from where you are now."},
                             "reason": {"type": "string", "description": "what you tried, and what the strategist and the expert said"}},
                            ["reason"]), False),
     "wiki_read": (t_wiki_read, "Read a wiki page found with wiki_search (pass its url).",

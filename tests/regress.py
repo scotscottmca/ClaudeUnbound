@@ -840,6 +840,93 @@ def walkthrough_ranking():
 
 
 @case(emu=False)
+def walkthrough_outline():
+    # With no query the walkthrough serves an outline, not a route (#181): every part notes its badge and HM gates,
+    # and nothing served reads like directions. Built here from two fake pages; then the real outline, if built.
+    import json, pathlib, re, wiki
+    pages, old =pathlib.Path(TMP) / "lr_pages", (wiki.LR_PAGES, wiki.LR_OUTLINE)
+    pages.mkdir(exist_ok=True)
+    fake = {1: ("Dresco Town & Route 3", "- Arrive in Dresco Town\n- Walk 3 tiles north to the gym\n- Obtain HM01 Cut",
+                "## Dresco Town\n| Points of Interest |\n| | Trainer House |\n| | Ladder Up to 2F |\n| | Requires HM Surf |\nhead north"),
+            2: ("Dresco Gym", "- Beat the Dresco Gym and win the Leaf Badge\n- Obtain HM03 Surf",
+                "## Dresco Gym – Leaf Badge\n### Dresco Gym Leader Mirskle\ntext"),
+            3: ("Crater Town", "- Arrive in Crater Town\n- Obtain Permission to Use HM03 Surf", "## Crater Town\ntext")}
+    for n, (title, guide, body) in fake.items():
+        (pages / f"walkthrough__part-{n}.json").write_text(json.dumps(
+            {"title": f"{title}: Pokémon Unbound Walkthrough (Part {n})", "text": f"Quick Guide:\n\n{guide}\n\n{body}"}),
+            encoding="utf-8")
+    wiki.LR_PAGES, wiki.LR_OUTLINE = pages, pathlib.Path(TMP) / "outline.json"
+    try:
+        with contextlib.redirect_stdout(io.StringIO()):
+            wiki.outline()
+        out = json.loads(wiki.LR_OUTLINE.read_text(encoding="utf-8"))
+        assert [e["places"] for e in out] == [["Dresco Town", "Route 3"], ["Dresco Town"], ["Crater Town"]], out
+        assert out[0]["objectives"] == ["Arrive in Dresco Town", "Obtain HM01 Cut"], out[0]  # the walk step dropped
+        assert out[0]["people_places"] == ["Trainer House"] and out[0]["later"] == ["Surf"], out[0]
+        assert out[1]["gym"] == "Dresco Gym, Leaf Badge (leader Mirskle)" and out[1]["hms"] == ["Cut"], out[1]
+        assert out[2]["badges"] == ["Leaf"] and out[2]["hms"] == ["Cut"], out[2]  # Surf only after its permission
+        text = wiki.outline_for("Dresco Town", 0)
+        assert text.count("Gate on arrival") == 3 and text.index("Part 1: Dresco") < text.index("Part 2: Dresco"), text
+        assert not wiki.STEPLIKE.search(text), text
+        assert wiki.outline_for("Dresco Town", 1).split("\n")[1].startswith("Part 2: "), "with the badge: from its part"
+        assert wiki.outline_for("Crater Town", 0).split("\n")[1].startswith("Part 3: ")
+    finally:
+        wiki.LR_PAGES, wiki.LR_OUTLINE = old
+    if not wiki.LR_OUTLINE.exists():  # gitignored data: built by `python bridge/wiki.py outline`
+        print("  (no wiki/outline.json: real-outline check skipped)")
+        return
+    out = json.loads(wiki.LR_OUTLINE.read_text(encoding="utf-8"))
+    towns = {pl for e in out for pl in e["places"] if re.search(r" (?:Town|City|Village)$", pl)}
+    for f in wiki.LR_PAGES.glob("walkthrough__part-*.json"):  # every town a part is named after has an entry
+        title = json.loads(f.read_text(encoding="utf-8"))["title"]
+        for t in re.findall(r"[A-Z]\w+ (?:Town|City|Village)", title.split(":")[0]):
+            assert t in towns, (t, f.name)
+    for e in out:
+        r = wiki.render_outline(e)
+        assert re.search(r"Gate on arrival: \d+ badge\(s\).*; HMs usable: .+\.", r) and not wiki.STEPLIKE.search(r), r
+    for pl in {pl for e in out for pl in e["places"]}:
+        for badges in range(9):
+            text = wiki.outline_for(pl, badges)
+            assert not wiki.STEPLIKE.search(text) and len(text) < 4000, (pl, badges, wiki.STEPLIKE.search(text))
+
+
+@case(emu=False)
+def walkthrough_gate_redirect():
+    # A hint that only redirects ("stop that path", "try the walkthrough") closed an open gate for 150 actions (#182).
+    # Hints restart the clock only with new information; the other conditions are unchanged.
+    import json
+    ws = os.path.join(TMP, "gate")
+    os.makedirs(os.path.join(ws, "transcripts"), exist_ok=True)
+    old = (M.LOG, M.tracker, M.steps)
+    hint = "OPERATOR HINT (new, pinned in memory/operator.md; true, act on it): "
+    with open(os.path.join(ws, "milestones.jsonl"), "w", encoding="utf-8") as f:
+        f.write(json.dumps({"t": 1000.0, "step": 10, "kind": "map", "map": "Frost Mountain"}) + "\n")
+    with open(os.path.join(ws, "transcripts", "s.jsonl"), "w", encoding="utf-8") as f:
+        for who in ("strategist", "expert"):
+            f.write(json.dumps({"timestamp": "1970-01-01T00:20:00", "content": [{"name": "Agent", "input": {
+                "subagent_type": who}}]}, separators=(",", ":")) + "\n")
+    lines = [{"t": 1000.0 + s, "step": s, "harness": ["WATCHDOG: no new tile"]} for s in (50, 90)]
+    lines.append({"t": 1300.0, "step": 300, "harness": [hint + "- Stop trying the boulders. Go to Blizzard City now. | "
+                                                        "- If still stuck, call wiki_walkthrough."]})
+    M.LOG, M.tracker, M.steps = os.path.join(ws, "log.jsonl"), types.SimpleNamespace(
+        path=os.path.join(ws, "milestones.jsonl")), 320
+    try:
+        def gate(extra=()):
+            with open(M.LOG, "w", encoding="utf-8") as f:
+                f.writelines(json.dumps(e) + "\n" for e in lines + list(extra))
+            return M.stuck_evidence()
+        unmet, facts = gate()
+        assert unmet == [] and facts["actions_since_progress"] == 310, (unmet, facts)  # the redirect left it open
+        unmet, facts = gate([{"t": 1310.0, "step": 310, "harness": [hint + "- Strength is HM04, from Epidimy Town."]}])
+        assert facts["actions_since_progress"] == 10 and facts["watchdogs_since_progress"] == 0, facts  # new info
+        assert len(unmet) == 3 and "strategist" in unmet[2], unmet  # actions, watchdogs, strategist (expert: per gym)
+        assert M.is_redirect("- For now, follow Blizzard City. Leave the Frost Mountain boulders for later.")
+        assert not M.is_redirect("- Stop trying the boulders. | - The old man in Epidimy Town gives Strength.")
+    finally:
+        M.LOG, M.tracker, M.steps = old
+
+
+@case(emu=False)
 def walk_sequence_guard():
     # Crater gym id 11 (0x24, walk sequence right-down-up-left, home (24,6), range x4 y3), as recorded in the
     # user's demo: a 14-step loop. The tiles the user waited on are safe; the one they were caught on isn't.

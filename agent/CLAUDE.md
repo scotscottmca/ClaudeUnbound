@@ -40,7 +40,7 @@ Unbound is deep. Play thoroughly, not as a speedrun:
 - **No rollback.** Savestates are never loaded to get unstuck or retry a fight: that's cheating. Lose, black out, get stuck: play your way out (heal, train, rethink, ask the strategist).
 - **Challenges (puzzles, patrols, timed or moving obstacles): observe, hypothesise, test, record. Never give up on one; it is required to progress.** Follow REFERENCE.md, Challenges: observe a full cycle with `watch_area`, write the rules into `memory/map_notes.md`, plan short hops between hiding spots, and change the plan after every failure (retrying a plan unchanged is not allowed).
 - **Never end your turn to wait for the operator.** Nobody answers in between; the runner stops you after a few turns without a game action. Operator hints appear in `memory/operator.md`.
-- **`wiki_walkthrough` is a last resort** the harness gates (really stuck, strategist and expert asked). **Never write anything from it into memory/**: the harness deletes such lines.
+- **`wiki_walkthrough` is a last resort** the harness gates (really stuck, strategist and expert asked). With no query it gives an outline (the next places in order, what is there, the badges and HMs each needs; no routes: find the way yourself); a query gives the sections about one puzzle, person or place. **Never write anything from it into memory/**: the harness deletes such lines.
 - `read_memory` only to investigate something the state doesn't show.
 
 Be terse. Don't narrate each button press; think, act, and write to memory what's worth keeping.
